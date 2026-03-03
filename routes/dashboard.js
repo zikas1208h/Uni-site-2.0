@@ -3,8 +3,91 @@ const router = express.Router();
 const User = require('../models/User');
 const Course = require('../models/Course');
 const Material = require('../models/Material');
+const Grade = require('../models/Grade');
 const { auth, isAdmin, isSuperAdmin } = require('../middleware/auth');
 const { sendError } = require('../utils/errorResponse');
+
+// ── GET /api/dashboard/student-stats ─────────────────────────────────────────
+// Replaces 5 separate student dashboard API calls with one round-trip
+router.get('/student-stats', auth, async (req, res) => {
+  try {
+    const userId = req.userId;
+
+    // All 5 queries fire in parallel — one round-trip to MongoDB
+    const [user, grades] = await Promise.all([
+      User.findById(userId)
+        .select('enrolledCourses')
+        .populate('enrolledCourses', 'courseCode courseName credits status _id')
+        .lean(),
+      Grade.find({ student: userId })
+        .populate('course', 'courseCode courseName credits _id')
+        .sort({ createdAt: -1 })
+        .lean(),
+    ]);
+
+    const enrolledCourses = user?.enrolledCourses || [];
+    const enrolledIds = enrolledCourses.map(c => c._id);
+
+    // Now fetch materials for enrolled courses only
+    const [recentMaterials] = await Promise.all([
+      Material.find({ course: { $in: enrolledIds } })
+        .sort({ createdAt: -1 })
+        .limit(10)
+        .populate('course', 'courseCode courseName _id')
+        .lean(),
+    ]);
+
+    // Compute CGPA
+    let totalPoints = 0, totalCredits = 0;
+    const gradedIds = new Set();
+    grades.forEach(g => {
+      if (g.course?._id) gradedIds.add(g.course._id.toString());
+      if (!g.course?.credits) return;
+      if (g.isRetake && g.gradePoint === 0 && g.grade === 'F') return;
+      totalPoints  += g.gradePoint * g.course.credits;
+      totalCredits += g.course.credits;
+    });
+    const gpa = totalCredits > 0 ? parseFloat((totalPoints / totalCredits).toFixed(2)) : 0;
+
+    // Compute enrolled credits (exclude already-graded)
+    let currentCredits = 0;
+    enrolledCourses.forEach(c => {
+      if (!gradedIds.has(c._id.toString())) currentCredits += (c.credits || 0);
+    });
+
+    const realGradeCount = grades.filter(g => !(g.isRetake && g.gradePoint === 0 && g.grade === 'F')).length;
+    const hasNoGrades = realGradeCount === 0;
+    const getCreditLimit = (cgpa, noGrades) => {
+      if (noGrades)    return 21;
+      if (cgpa >= 3.0) return 21;
+      if (cgpa >= 2.0) return 15;
+      if (cgpa >= 1.0) return 12;
+      return 9;
+    };
+    const creditLimit = getCreditLimit(gpa, hasNoGrades);
+    let status = 'Probation';
+    if (hasNoGrades)    status = 'First Term';
+    else if (gpa >= 3.4) status = 'Good Standing';
+    else if (gpa >= 3.0) status = 'Satisfactory';
+    else if (gpa >= 2.0) status = 'Pass';
+    else if (gpa >= 1.0) status = 'Below Average';
+
+    res.json({
+      gpaData: { gpa, totalCredits },
+      grades,
+      enrolledCourses,
+      materials: recentMaterials,
+      creditEligibility: {
+        cgpa: gpa, status, creditLimit,
+        currentCredits, availableCredits: creditLimit - currentCredits,
+        canEnroll: currentCredits < creditLimit,
+      },
+    });
+  } catch (error) {
+    return sendError(res, 500, 'Error fetching student dashboard stats', error);
+  }
+});
+
 router.get('/stats', auth, isAdmin, async (req, res) => {
   try {
     const user = req.user;
