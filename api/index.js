@@ -113,6 +113,7 @@ const routeMap = {
   '/api/auth':          path.join(__dirname, '../routes/auth'),
   '/api/students':      path.join(__dirname, '../routes/students'),
   '/api/courses':       path.join(__dirname, '../routes/courses'),
+  '/api/dashboard':     path.join(__dirname, '../routes/dashboard'),
   '/api/materials':     path.join(__dirname, '../routes/materials'),
   '/api/grades':        path.join(__dirname, '../routes/grades'),
   '/api/registration':  path.join(__dirname, '../routes/registration'),

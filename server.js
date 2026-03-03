@@ -111,6 +111,7 @@ app.use(async (req, res, next) => {
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/students', require('./routes/students'));
 app.use('/api/courses', require('./routes/courses'));
+app.use('/api/dashboard', require('./routes/dashboard'));
 app.use('/api/materials', require('./routes/materials'));
 app.use('/api/grades', require('./routes/grades'));
 app.use('/api/registration', require('./routes/registration'));
