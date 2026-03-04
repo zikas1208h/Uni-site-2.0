@@ -23,6 +23,18 @@ const assignmentSchema = new mongoose.Schema({
   examDuration:  { type: Number, default: null },   // minutes
   examLocation:  { type: String, default: '' },
   isAnnouncement:{ type: Boolean, default: false }, // true = exam/quiz announcement only
+  // Links this assignment/exam to a grade component slot (set when graded)
+  gradeComponentId: { type: String, default: null },
+  // Per-student scores: { studentId: { score, gradedAt, gradedBy } }
+  studentScores: {
+    type: Map,
+    of: new mongoose.Schema({
+      score:    { type: Number, default: null },
+      gradedAt: { type: Date,   default: null },
+      gradedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+    }, { _id: false }),
+    default: {},
+  }, // matches component name+type key
   // Optional attached file (stored as base64 like materials)
   fileName: { type: String, default: '' },
   filePath: { type: String, default: '' },

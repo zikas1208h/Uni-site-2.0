@@ -53,7 +53,60 @@ const notifyEnrolledStudents = async ({ courseId, type, title, message, assignme
 };
 
 
-// â”€â”€ GET /assignments/my  â€” student: assignments for all their courses â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── GET /assignments/course/:courseId/components — get all assignments for a course as grade components
+router.get('/course/:courseId/components', auth, isAdmin, async (req, res) => {
+  try {
+    const assignments = await Assignment.find({ course: req.params.courseId })
+      .select('_id title examType isAnnouncement totalMarks deadline semester year studentScores')
+      .sort({ deadline: 1 })
+      .lean();
+    // Map each assignment to a component descriptor
+    const components = assignments.map(a => ({
+      assignmentId: a._id,
+      name: a.title,
+      type: a.examType !== 'none' ? a.examType : 'assignment',
+      maxScore: a.totalMarks || 100,
+      weight: a.totalMarks || 100, // default weight = maxScore, can be overridden
+      deadline: a.deadline,
+      semester: a.semester,
+      year: a.year,
+      studentScores: a.studentScores || {},
+    }));
+    res.json(components);
+  } catch (e) {
+    return sendError(res, 500, 'Error fetching course components', e);
+  }
+});
+
+// ── PATCH /assignments/:id/grade-student — grade a single student on this assignment
+router.patch('/:id/grade-student', auth, isAdmin, async (req, res) => {
+  try {
+    const { studentId, score } = req.body;
+    if (!studentId || score == null) return res.status(400).json({ message: 'studentId and score are required' });
+
+    const assignment = await Assignment.findById(req.params.id);
+    if (!assignment) return res.status(404).json({ message: 'Assignment not found' });
+    if (!canAccessCourse(req.user, assignment.course))
+      return res.status(403).json({ message: 'You do not have access to this course' });
+    if (score < 0 || score > assignment.totalMarks)
+      return res.status(400).json({ message: `Score must be between 0 and ${assignment.totalMarks}` });
+
+    // Store score on assignment
+    if (!assignment.studentScores) assignment.studentScores = new Map();
+    assignment.studentScores.set(studentId, {
+      score: Number(score),
+      gradedAt: new Date(),
+      gradedBy: req.userId,
+    });
+    await assignment.save();
+
+    res.json({ message: 'Score saved', assignmentId: assignment._id, studentId, score: Number(score) });
+  } catch (e) {
+    return sendError(res, 500, 'Error grading student', e);
+  }
+});
+
+// ── GET /assignments/my  — student: assignments for all their courses ────────
 router.get('/my', auth, async (req, res) => {
   try {
     const user = await User.findById(req.userId).select('enrolledCourses').lean();
