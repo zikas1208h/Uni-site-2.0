@@ -1,4 +1,4 @@
-const express = require('express');
+﻿﻿const express = require('express');
 const router = express.Router();
 const Grade = require('../models/Grade');
 const Course = require('../models/Course');
@@ -6,18 +6,18 @@ const User = require('../models/User');
 const { auth, isAdmin, requireSuperAdmin, isSuperAdmin, getEffectiveCourseIds } = require('../middleware/auth');
 const { sendError } = require('../utils/errorResponse');
 
-// â”€â”€â”€ Helper â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬ Helper أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬
 const extractId = (c) => (c._id || c).toString();
 
 
-// Uses req.user already populated by auth middleware â€” no extra DB call
+// Uses req.user already populated by auth middleware أ¢â‚¬â€‌ no extra DB call
 const canAccessCourse = (req, courseId) => {
   if (isSuperAdmin(req.user)) return true;
   const ids = getEffectiveCourseIds(req.user).map(id => id.toString());
   return ids.includes(courseId?.toString());
 };
 
-// â”€â”€ Grade statistics (superadmin only â€” all courses) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// أ¢â€‌â‚¬أ¢â€‌â‚¬ Grade statistics (superadmin only أ¢â‚¬â€‌ all courses) أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬
 router.get('/statistics', auth, requireSuperAdmin, async (req, res) => {
   try {
     // Exclude ungraded retake placeholders from averages
@@ -47,10 +47,10 @@ router.get('/statistics', auth, requireSuperAdmin, async (req, res) => {
   }
 });
 
-// â”€â”€ Grade statistics for assigned courses (doctor / assistant / superadmin) â”€â”€â”€
+// أ¢â€‌â‚¬أ¢â€‌â‚¬ Grade statistics for assigned courses (doctor / assistant / superadmin) أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬
 router.get('/statistics/my-courses', auth, isAdmin, async (req, res) => {
   try {
-    // Use already-populated req.user â€” no extra DB round-trip needed
+    // Use already-populated req.user أ¢â‚¬â€‌ no extra DB round-trip needed
     let scopedCourseIds = null; // null = superadmin, sees all
     if (!isSuperAdmin(req.user)) {
       scopedCourseIds = getEffectiveCourseIds(req.user);
@@ -67,13 +67,13 @@ router.get('/statistics/my-courses', auth, isAdmin, async (req, res) => {
       ? { course: { $in: scopedCourseIds }, ...excludeUngradedRetakes }
       : excludeUngradedRetakes;
 
-    // â”€â”€ Get all assigned courses (even those with 0 grades) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // أ¢â€‌â‚¬أ¢â€‌â‚¬ Get all assigned courses (even those with 0 grades) أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬
     const courseQuery = scopedCourseIds ? { _id: { $in: scopedCourseIds } } : {};
     const allCourses = await Course.find(courseQuery)
       .select('_id courseCode courseName major year semester status')
       .lean();
 
-    // â”€â”€ Get grade aggregates for courses that HAVE grades â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // أ¢â€‌â‚¬أ¢â€‌â‚¬ Get grade aggregates for courses that HAVE grades أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬
     const gradeAggRaw = await Grade.aggregate([
       { $match: effectiveCourseFilter },
       { $group: {
@@ -90,7 +90,7 @@ router.get('/statistics/my-courses', auth, isAdmin, async (req, res) => {
     // Map grade agg by courseId string for easy lookup
     const gradeMap = new Map(gradeAggRaw.map(g => [g._id.toString(), g]));
 
-    // â”€â”€ Merge: every course gets a stats row, zero-filled if no grades â”€â”€â”€â”€â”€â”€â”€â”€
+    // أ¢â€‌â‚¬أ¢â€‌â‚¬ Merge: every course gets a stats row, zero-filled if no grades أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬
     const courseStats = allCourses.map(c => {
       const g = gradeMap.get(c._id.toString());
       return {
@@ -108,14 +108,14 @@ router.get('/statistics/my-courses', auth, isAdmin, async (req, res) => {
       };
     }).sort((a, b) => (a.courseCode || '').localeCompare(b.courseCode || ''));
 
-    // â”€â”€ Grade distribution across all scoped courses â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // أ¢â€‌â‚¬أ¢â€‌â‚¬ Grade distribution across all scoped courses أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬
     const gradeDist = await Grade.aggregate([
       { $match: effectiveCourseFilter },
       { $group: { _id: '$grade', count: { $sum: 1 } } },
       { $sort: { _id: 1 } }
     ]);
 
-    // â”€â”€ Per-major stats â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // أ¢â€‌â‚¬أ¢â€‌â‚¬ Per-major stats أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬
     const majorStats = await Grade.aggregate([
       { $match: effectiveCourseFilter },
       { $lookup: { from: 'users', localField: 'student', foreignField: '_id', as: 'studentInfo' } },
@@ -147,7 +147,7 @@ router.get('/statistics/my-courses', auth, isAdmin, async (req, res) => {
   }
 });
 
-// â”€â”€ Student's own grades â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// أ¢â€‌â‚¬أ¢â€‌â‚¬ Student's own grades أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬
 router.get('/student', auth, async (req, res) => {
   try {
     const grades = await Grade.find({ student: req.userId })
@@ -155,36 +155,37 @@ router.get('/student', auth, async (req, res) => {
       .sort({ year: -1, semester: 1 })
       .lean();
     // For retake records: the F has been replaced by the new grade already.
-    // isRetake=true just means the student previously failed â€” the grade shown IS the new one.
+    // isRetake=true just means the student previously failed أ¢â‚¬â€‌ the grade shown IS the new one.
     res.json(grades);
   } catch (error) {
     return sendError(res, 500, 'Error fetching grades', error);
   }
 });
 
-// â”€â”€ Calculate GPA â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// أ¢â€‌â‚¬أ¢â€‌â‚¬ Calculate GPA أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬
 // Skip: (1) records with no credits, (2) ungraded retake placeholders (isRetake=true, grade still F/0)
 router.get('/gpa', auth, async (req, res) => {
   try {
     const grades = await Grade.find({ student: req.userId }).populate('course', 'credits').lean();
-    if (grades.length === 0) return res.json({ gpa: 0, totalCredits: 0 });
-    let totalPoints = 0, totalCredits = 0;
+    if (grades.length === 0) return res.json({ gpa: 0, totalCredits: 0, partialCount: 0 });
+    let totalPoints = 0, totalCredits = 0, partialCount = 0;
     grades.forEach(g => {
       // Skip courses with no credits
       if (!g.course?.credits) return;
-      // Skip ungraded retake placeholders â€” re-enrolled but not yet graded
+      // Skip ungraded retake placeholders أ¢â‚¬â€‌ re-enrolled but not yet graded
       if (g.isRetake && g.gradePoint === 0 && g.grade === 'F') return;
+      if (!g.isFinalized) { partialCount++; return; }
       totalPoints  += g.gradePoint * g.course.credits;
       totalCredits += g.course.credits;
     });
-    if (totalCredits === 0) return res.json({ gpa: 0, totalCredits: 0 });
-    res.json({ gpa: parseFloat((totalPoints / totalCredits).toFixed(2)), totalCredits });
+    if (totalCredits === 0) return res.json({ gpa: 0, totalCredits: 0, partialCount });
+    res.json({ gpa: parseFloat((totalPoints / totalCredits).toFixed(2)), totalCredits, partialCount });
   } catch (error) {
     return sendError(res, 500, 'Error calculating GPA', error);
   }
 });
 
-// â”€â”€ Grades by course â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// أ¢â€‌â‚¬أ¢â€‌â‚¬ Grades by course أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬
 router.get('/course/:courseId', auth, async (req, res) => {
   try {
     const grade = await Grade.findOne({ student: req.userId, course: req.params.courseId })
@@ -196,7 +197,7 @@ router.get('/course/:courseId', auth, async (req, res) => {
   }
 });
 
-// â”€â”€ Add / Update grade (staff: doctor/assistant/superadmin) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// أ¢â€‌â‚¬أ¢â€‌â‚¬ Add / Update grade (staff: doctor/assistant/superadmin) أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬
 router.post('/', auth, isAdmin, async (req, res) => {
   try {
     const {
@@ -216,7 +217,7 @@ router.post('/', auth, isAdmin, async (req, res) => {
     const { calcLetterGrade, calcLetterGradeFromTotal, calcFromComponents, applyRetakeCap } = require('../models/Grade');
     let finalGrade, finalGradePoint, computedTotal;
 
-    // Priority: components â†’ legacy scores â†’ manual
+    // Priority: components أ¢â€ â€™ legacy scores أ¢â€ â€™ manual
     const hasComponents = Array.isArray(components) && components.length > 0 &&
       components.some(c => c.score != null);
     const hasScores = quizScore != null && assignmentScore != null && finalScore != null;
@@ -240,7 +241,7 @@ router.post('/', auth, isAdmin, async (req, res) => {
 
     if (!finalGrade) return res.status(400).json({ message: 'Grade or scores are required' });
 
-    // â”€â”€ Check if this is a retake â€” apply cap if so â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // أ¢â€‌â‚¬أ¢â€‌â‚¬ Check if this is a retake أ¢â‚¬â€‌ apply cap if so أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬
     let existingGrade = await Grade.findOne({ student, course });
     const isRetake = existingGrade?.isRetake === true;
 
@@ -250,7 +251,7 @@ router.post('/', auth, isAdmin, async (req, res) => {
       finalGrade      = capped.grade;
       finalGradePoint = capped.gradePoint;
     } else if (isRetake && finalGrade) {
-      // Manual grade entry for retake â€” cap gradePoint at B (3.0, corresponds to 83)
+      // Manual grade entry for retake أ¢â‚¬â€‌ cap gradePoint at B (3.0, corresponds to 83)
       const RETAKE_MAX_GP = 3.0; // B = max 83 marks
       if (finalGradePoint > RETAKE_MAX_GP) {
         finalGrade      = 'B';
@@ -307,7 +308,7 @@ router.post('/', auth, isAdmin, async (req, res) => {
   }
 });
 
-// â”€â”€ Delete grade (superadmin only) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// أ¢â€‌â‚¬أ¢â€‌â‚¬ Delete grade (superadmin only) أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬
 router.delete('/:id', auth, requireSuperAdmin, async (req, res) => {
   try {
     const grade = await Grade.findByIdAndDelete(req.params.id);
@@ -318,7 +319,7 @@ router.delete('/:id', auth, requireSuperAdmin, async (req, res) => {
   }
 });
 
-// â”€â”€ Get grades for a specific student (staff) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// أ¢â€‌â‚¬أ¢â€‌â‚¬ Get grades for a specific student (staff) أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬
 router.get('/admin/student/:studentId', auth, isAdmin, async (req, res) => {
   try {
     const grades = await Grade.find({ student: req.params.studentId })
@@ -329,14 +330,19 @@ router.get('/admin/student/:studentId', auth, isAdmin, async (req, res) => {
       ? grades
       : grades.filter(g => canAccessCourse(req, (g.course?._id || g.course)));
 
-    const cgpa = filteredGrades.length > 0
-      ? parseFloat((filteredGrades.reduce((s, g) => s + g.gradePoint, 0) / filteredGrades.length).toFixed(2))
-      : 0;
+    // CGPA only from finalized grades (final exam has been graded)
+    const finalizedGrades = filteredGrades.filter(g => g.isFinalized !== false);
+    const totalWP = finalizedGrades.reduce((s, g) => s + (g.gradePoint * (g.course?.credits || 1)), 0);
+    const totalCr = finalizedGrades.reduce((s, g) => s + (g.course?.credits || 1), 0);
+    const cgpa = totalCr > 0 ? parseFloat((totalWP / totalCr).toFixed(2)) : 0;
+    const partialCount = filteredGrades.filter(g => g.isFinalized === false).length;
 
-    res.json({ grades: filteredGrades, cgpa, totalGrades: filteredGrades.length });
+    res.json({ grades: filteredGrades, cgpa, totalGrades: filteredGrades.length, partialCount });
   } catch (error) {
     return sendError(res, 500, 'Error fetching student grades', error);
   }
 });
 
 module.exports = router;
+
+

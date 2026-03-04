@@ -1,12 +1,13 @@
 const mongoose = require('mongoose');
 
-// ── Exam component schema — defined first so gradeSchema can reference it ─────
+// ── Exam component schema ──────────────────────────────────────────────────────
 const examComponentSchema = new mongoose.Schema({
   name:      { type: String, required: true },
   type:      { type: String, enum: ['quiz','midterm','final','assignment','other'], default: 'quiz' },
   score:     { type: Number, min: 0, default: null },
   maxScore:  { type: Number, min: 1, default: 100 },
   weight:    { type: Number, min: 0, max: 100, default: null },
+  isFinal:   { type: Boolean, default: false }, // marks this as the Final Exam component
 }, { _id: false });
 
 // DEFINED FIRST — used by both calcLetterGrade and pre-save hook
@@ -64,6 +65,11 @@ const gradeSchema = new mongoose.Schema({
   grade:      { type: String, required: true, enum: ['A+','A','A-','B+','B','B-','C+','C','C-','D+','D','D-','F'] },
   gradePoint: { type: Number, required: true },
 
+  // ── Finalization — GPA only counts when this is true ───────────────────────
+  // Set to true automatically when a 'final' type component is graded,
+  // or when using legacy scores (finalScore present), or manual grade entry.
+  isFinalized: { type: Boolean, default: false },
+
   // ── Retake tracking ──────────────────────────────────────────────────────────
   isRetake:       { type: Boolean, default: false },  // true = student previously got F
   previousGrade:  { type: String, default: null },    // the F grade from previous attempt
@@ -73,38 +79,37 @@ const gradeSchema = new mongoose.Schema({
   year:     { type: Number, required: true },
 }, { timestamps: true });
 
-// Auto-calculate grade when scores are set
+// ── Auto-calculate grade + set isFinalized ────────────────────────────────────
 gradeSchema.pre('save', function (next) {
-  // Try components first
+  // Determine finalization:
+  // 1. Components mode: finalized only if a 'final' or 'isFinal' component has a score
+  // 2. Legacy scores: finalized only if finalScore is present
+  // 3. Manual: always finalized
+
   const fromComp = calcFromComponents(this.components);
   if (fromComp != null) {
-    // Use quiz+assignment+final from components if available, else use weighted total as "final"
-    const q = this.quizScore ?? 0;
-    const a = this.assignmentScore ?? 0;
-    const f = this.finalScore ?? 0;
-    // If legacy scores also set, combine; otherwise treat component total as the score
-    if (this.quizScore != null && this.assignmentScore != null && this.finalScore != null) {
-      const { grade, gradePoint } = calcLetterGrade(q, a, f);
-      this.grade = grade; this.gradePoint = gradePoint;
-    } else {
-      // Map component total (0-100) directly to grade table
-      const total = fromComp;
-      const { grade, gradePoint } = calcLetterGrade(0, 0, total / 0.60); // treat as 100% final
-      // simpler: use total directly
-      const g = calcLetterGradeFromTotal(total);
-      this.grade = g.grade; this.gradePoint = g.gradePoint;
-    }
+    const hasFinalComp = this.components.some(
+      c => (c.type === 'final' || c.isFinal === true) && c.score != null
+    );
+    this.isFinalized = hasFinalComp;
+    const g = calcLetterGradeFromTotal(fromComp);
+    this.grade = g.grade;
+    this.gradePoint = g.gradePoint;
     return next();
   }
-  // Legacy scores
+
   const q = this.quizScore, a = this.assignmentScore, f = this.finalScore;
   if (q != null && a != null && f != null) {
+    this.isFinalized = true; // legacy scores always have final
     const { grade, gradePoint } = calcLetterGrade(q, a, f);
     this.grade = grade; this.gradePoint = gradePoint;
+    return next();
   }
+
+  // Manual grade: always finalized
+  this.isFinalized = true;
   next();
 });
-
 
 // Indexes
 gradeSchema.index({ student: 1 });

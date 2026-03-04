@@ -9,7 +9,7 @@ const { sendError } = require('../utils/errorResponse');
 // Helper: calculate CGPA + enrolled credits in ONE query pass
 const getStudentCreditInfo = async (studentId) => {
   const [grades, user] = await Promise.all([
-    Grade.find({ student: studentId }).select('gradePoint grade course isRetake').populate('course', 'credits').lean(),
+    Grade.find({ student: studentId }).select('gradePoint grade course isRetake isFinalized').populate('course', 'credits').lean(),
     User.findById(studentId).select('enrolledCourses').populate('enrolledCourses', '_id credits').lean(),
   ]);
   let totalPoints = 0, totalCredits = 0;
@@ -18,6 +18,8 @@ const getStudentCreditInfo = async (studentId) => {
     if (g.course?._id) gradedIds.add(g.course._id.toString());
     if (!g.course?.credits) return;
     if (g.isRetake && g.gradePoint === 0 && g.grade === 'F') return;
+    // Only count finalized grades (final exam graded) in CGPA
+    if (g.isFinalized === false) return;
     totalPoints  += g.gradePoint * g.course.credits;
     totalCredits += g.course.credits;
   });
@@ -148,7 +150,7 @@ router.post('/:id/enroll', auth, async (req, res) => {
 
     // Calculate CGPA and credits in parallel from already-fetched data
     const gradesForCGPA = await Grade.find({ student: req.userId })
-      .select('gradePoint course isRetake grade').populate('course', 'credits').lean();
+      .select('gradePoint course isRetake grade isFinalized').populate('course', 'credits').lean();
 
     let totalPoints = 0, totalCredits = 0;
     const gradedCourseIds = new Set();
@@ -156,6 +158,8 @@ router.post('/:id/enroll', auth, async (req, res) => {
       gradedCourseIds.add(g.course?._id?.toString());
       if (!g.course?.credits) return;
       if (g.isRetake && g.gradePoint === 0 && g.grade === 'F') return;
+      // Only finalized grades count toward CGPA
+      if (g.isFinalized === false) return;
       totalPoints  += g.gradePoint * g.course.credits;
       totalCredits += g.course.credits;
     });
