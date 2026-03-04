@@ -22,11 +22,14 @@
 const cluster = require('cluster');
 const os      = require('os');
 
-// On Railway free/hobby (1 vCPU) this still forks 1 worker — no overhead.
-// On Railway Pro (8 vCPU) this forks 8 workers automatically.
-const NUM_WORKERS = process.env.WEB_CONCURRENCY  // Railway sets this on Pro plans
-  ? parseInt(process.env.WEB_CONCURRENCY, 10)
-  : Math.max(1, os.cpus().length);               // fallback: all available CPUs
+// Cap at 2 workers to stay within Railway's memory limit.
+// WEB_CONCURRENCY is set by Railway Pro plans — respect it but still cap at 2.
+const NUM_WORKERS = Math.min(
+  2,
+  process.env.WEB_CONCURRENCY
+    ? parseInt(process.env.WEB_CONCURRENCY, 10)
+    : Math.max(1, os.cpus().length)
+);
 
 if (cluster.isPrimary) {
   console.log(`\n🚀 Primary ${process.pid} — forking ${NUM_WORKERS} worker(s)\n`);
@@ -52,4 +55,3 @@ if (cluster.isPrimary) {
   require('./server.js');
   console.log(`  Worker ${process.pid} started`);
 }
-
