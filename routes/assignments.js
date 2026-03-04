@@ -262,6 +262,65 @@ router.post('/', auth, isAdmin, upload.single('file'), async (req, res) => {
     });
 
     const { fileData: _, ...safeAssignment } = assignment.toObject();
+
+    // ── Auto-add classwork entry to every enrolled student's Grade doc ──────
+    // Only for assignments and quizzes (not exam announcements for midterm/final —
+    // those are handled via the semester grade route)
+    const isClassworkType = !assignmentData.isAnnouncement ||
+      (assignmentData.examType === 'quiz') ||
+      (assignmentData.examType === 'none');
+
+    if (isClassworkType) {
+      try {
+        const entryType = assignmentData.examType === 'quiz' ? 'quiz'
+          : assignmentData.examType === 'none' ? 'assignment'
+          : 'other';
+
+        const studentIds = await getStudentsForCourse(course);
+        if (studentIds.length) {
+          // For each student, upsert a Grade doc and push the classwork entry
+          await Promise.all(studentIds.map(async (sId) => {
+            const existing = await Grade.findOne({ student: sId, course });
+            if (existing) {
+              // Only add if not already present
+              const alreadyAdded = existing.classwork.some(e => e.assignmentId?.toString() === assignment._id.toString());
+              if (!alreadyAdded) {
+                existing.classwork.push({
+                  assignmentId: assignment._id,
+                  name:     assignment.title,
+                  type:     entryType,
+                  maxScore: assignment.totalMarks || 100,
+                  score:    null,
+                  isGraded: false,
+                });
+                existing.markModified('classwork');
+                await existing.save();
+              }
+            } else {
+              // Create a new grade doc with just the classwork entry
+              const courseDoc2 = await Course.findById(course).select('semester year').lean();
+              await Grade.create({
+                student:  sId,
+                course,
+                semester: assignmentData.semester || courseDoc2?.semester || 'Spring',
+                year:     assignmentData.year     || courseDoc2?.year     || new Date().getFullYear(),
+                classwork: [{
+                  assignmentId: assignment._id,
+                  name:     assignment.title,
+                  type:     entryType,
+                  maxScore: assignment.totalMarks || 100,
+                  score:    null,
+                  isGraded: false,
+                }],
+              });
+            }
+          }));
+        }
+      } catch (classworkErr) {
+        console.error('Classwork auto-add error (non-fatal):', classworkErr.message);
+      }
+    }
+
     res.status(201).json(safeAssignment);
   } catch (e) {
     return sendError(res, 500, 'Error creating assignment', e);
