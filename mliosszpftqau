@@ -1,0 +1,8 @@
+[33mcommit f23f59837ed0f940d5a46f4511dd9f0c4b82d003[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmaster[m[33m, [m[1;31morigin/master[m[33m)[m
+Author: zikas1208h <Zikas1208h@gmail.com>
+Date:   Wed Mar 4 19:22:40 2026 +0200
+
+    fix: strip spaces from Gmail App Password — fixes send-otp failing
+
+ utils/mailer.js | 9 [32m++++++[m[31m---[m
+ 1 file changed, 6 insertions(+), 3 deletions(-)
