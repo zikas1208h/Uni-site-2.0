@@ -80,13 +80,13 @@ const connectDB = async () => {
   if (cachedConn && mongoose.connection.readyState === 1) return cachedConn;
   if (mongoose.connection.readyState === 1) { cachedConn = mongoose.connection; return cachedConn; }
   cachedConn = await mongoose.connect(process.env.MONGODB_URI, {
-    maxPoolSize: 10,
+    maxPoolSize: 5,   // per worker — 8 workers × 5 = 40 total connections (safe for M10/M20)
     minPoolSize: 1,
-    serverSelectionTimeoutMS: 5000,  // fail fast — was 10000
-    socketTimeoutMS: 20000,          // was 30000
-    connectTimeoutMS: 5000,          // fail fast — was 10000
+    serverSelectionTimeoutMS: 5000,
+    socketTimeoutMS: 20000,
+    connectTimeoutMS: 5000,
     bufferCommands: false,
-    heartbeatFrequencyMS: 60000,     // less frequent — was 30000
+    heartbeatFrequencyMS: 60000,
   });
   console.log('✓ MongoDB connected');
   return cachedConn;
