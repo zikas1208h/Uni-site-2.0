@@ -185,8 +185,9 @@ router.post('/semester', auth, isAdmin, async (req, res) => {
   } catch (e) { return sendError(res, 500, 'Error saving semester grade', e); }
 });
 
-// ── Grade a classwork entry (assignment/quiz) for a student ───────────────────
+// ── Grade a classwork entry (assignment/quiz/practical) for a student ─────────
 // PATCH /grades/classwork/:assignmentId/student/:studentId  { score }
+// assignmentId can be an ObjectId OR the string "practical" for practical exam
 router.patch('/classwork/:assignmentId/student/:studentId', auth, isAdmin, async (req, res) => {
   try {
     const { assignmentId, studentId } = req.params;
@@ -194,14 +195,22 @@ router.patch('/classwork/:assignmentId/student/:studentId', auth, isAdmin, async
 
     if (score == null) return res.status(400).json({ message: 'score is required' });
 
-    // Find the grade doc; it should already exist with the classwork entry auto-added
-    const gradeDoc = await Grade.findOne({ student: studentId, 'classwork.assignmentId': assignmentId });
-    if (!gradeDoc) return res.status(404).json({ message: 'Classwork entry not found. Assignment may not be linked to this student yet.' });
+    const isPractical = assignmentId === 'practical';
+
+    // Find the grade doc
+    const gradeDoc = isPractical
+      ? await Grade.findOne({ student: studentId, 'classwork.type': 'practical' })
+      : await Grade.findOne({ student: studentId, 'classwork.assignmentId': assignmentId });
+
+    if (!gradeDoc) return res.status(404).json({ message: 'Classwork entry not found.' });
 
     if (!canAccessCourse(req, gradeDoc.course.toString()))
       return res.status(403).json({ message: 'You do not have access to this course' });
 
-    const entry = gradeDoc.classwork.find(e => e.assignmentId?.toString() === assignmentId);
+    const entry = isPractical
+      ? gradeDoc.classwork.find(e => e.type === 'practical')
+      : gradeDoc.classwork.find(e => e.assignmentId?.toString() === assignmentId);
+
     if (!entry) return res.status(404).json({ message: 'Classwork entry not found' });
 
     if (Number(score) < 0 || Number(score) > entry.maxScore)

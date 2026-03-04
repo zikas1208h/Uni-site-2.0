@@ -225,6 +225,27 @@ router.post('/:id/enroll', auth, async (req, res) => {
       Course.findByIdAndUpdate(req.params.id, { $addToSet: { enrolledStudents: req.userId } }),
     ]);
 
+    // If course has a practical exam, auto-add the classwork slot to student's grade doc
+    if (course.hasPractical) {
+      try {
+        let gradeDoc = await Grade.findOne({ student: req.userId, course: course._id });
+        if (!gradeDoc) {
+          gradeDoc = new Grade({
+            student: req.userId, course: course._id,
+            semester: course.semester, year: course.year,
+          });
+        }
+        const alreadyHasPractical = gradeDoc.classwork.some(e => e.type === 'practical');
+        if (!alreadyHasPractical) {
+          gradeDoc.classwork.push({ name: 'Practical Exam', type: 'practical', maxScore: 100, score: null, isGraded: false });
+          gradeDoc.markModified('classwork');
+          await gradeDoc.save();
+        }
+      } catch (practicalErr) {
+        console.error('Practical auto-add error (non-fatal):', practicalErr.message);
+      }
+    }
+
     const newTotal = currentCredits + course.credits;
     res.json({
       message: isRetake ? `Re-enrolled in ${course.courseName}. Note: maximum grade is capped at 83 (B).` : 'Successfully enrolled in course',
@@ -237,6 +258,45 @@ router.post('/:id/enroll', auth, async (req, res) => {
   }
 });
 
+
+// Sync practical exam slot for all students (when hasPractical toggled after enrollment)
+router.post('/:id/sync-practical', auth, isAdmin, async (req, res) => {
+  try {
+    const course = await Course.findById(req.params.id).lean();
+    if (!course) return res.status(404).json({ message: 'Course not found' });
+
+    if (!course.hasPractical) {
+      return res.status(400).json({ message: 'This course does not have hasPractical enabled.' });
+    }
+
+    // Get all students enrolled or with a grade doc for this course
+    const [enrolledUsers, grades] = await Promise.all([
+      User.find({ role: 'student', enrolledCourses: course._id }, { _id: 1 }).lean(),
+      Grade.find({ course: course._id }, { student: 1 }).lean(),
+    ]);
+    const studentIds = [...new Set([
+      ...enrolledUsers.map(u => u._id.toString()),
+      ...grades.map(g => g.student.toString()),
+    ])];
+
+    let added = 0;
+    await Promise.all(studentIds.map(async (sId) => {
+      let gradeDoc = await Grade.findOne({ student: sId, course: course._id });
+      if (!gradeDoc) {
+        gradeDoc = new Grade({ student: sId, course: course._id, semester: course.semester, year: course.year });
+      }
+      const alreadyHasPractical = gradeDoc.classwork.some(e => e.type === 'practical');
+      if (!alreadyHasPractical) {
+        gradeDoc.classwork.push({ name: 'Practical Exam', type: 'practical', maxScore: 100, score: null, isGraded: false });
+        gradeDoc.markModified('classwork');
+        await gradeDoc.save();
+        added++;
+      }
+    }));
+
+    res.json({ message: `Practical exam slot added to ${added} student(s).`, total: studentIds.length, added });
+  } catch (e) { return sendError(res, 500, 'Error syncing practical exam', e); }
+});
 
 // Mark course as ended / reactivate (superadmin or doctor with canMarkCourseStatus permission)
 router.patch('/:id/status', auth, isAdmin, async (req, res) => {

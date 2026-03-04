@@ -62,6 +62,8 @@ const courseSchema = new mongoose.Schema({
     ref: 'User',
     default: [],
   }],
+  // Some courses have a practical/lab exam component
+  hasPractical: { type: Boolean, default: false },
 }, {
   timestamps: true
 });
