@@ -17,6 +17,35 @@ const canAccessCourse = (req, courseId) => {
   return ids.includes(courseId?.toString());
 };
 
+/**
+ * isGradeFinalized(g)
+ * Returns true if this grade should count toward CGPA.
+ *
+ * For NEW grades: uses the isFinalized field set by the pre-save hook.
+ * For OLD grades (isFinalized === undefined, saved before this feature):
+ *   - If it has components: finalized only if one has type 'final' with a score
+ *   - If it has legacy finalScore: finalized
+ *   - If it has no scores at all (manual grade entry): finalized
+ *   - If it only has quiz/assignment scores but no finalScore/final-component: NOT finalized
+ */
+const isGradeFinalized = (g) => {
+  // Explicitly set by pre-save hook
+  if (g.isFinalized === true)  return true;
+  if (g.isFinalized === false) return false;
+
+  // Legacy grade (isFinalized undefined) — inspect the data
+  const comps = g.components || [];
+  if (comps.length > 0) {
+    // Has components — finalized only if a 'final' component has a score
+    return comps.some(c => c.type === 'final' && c.score != null);
+  }
+  // Legacy scores
+  if (g.finalScore != null) return true;   // has finalScore → finalized
+  if (g.quizScore != null || g.assignmentScore != null) return false; // partial only
+  // Manual grade (no scores at all) → always finalized
+  return true;
+};
+
 // أ¢â€‌â‚¬أ¢â€‌â‚¬ Grade statistics (superadmin only أ¢â‚¬â€‌ all courses) أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬
 router.get('/statistics', auth, requireSuperAdmin, async (req, res) => {
   try {
@@ -166,15 +195,14 @@ router.get('/student', auth, async (req, res) => {
 // Skip: (1) records with no credits, (2) ungraded retake placeholders (isRetake=true, grade still F/0)
 router.get('/gpa', auth, async (req, res) => {
   try {
-    const grades = await Grade.find({ student: req.userId }).populate('course', 'credits').lean();
+    const grades = await Grade.find({ student: req.userId })
+      .populate('course', 'credits').lean();
     if (grades.length === 0) return res.json({ gpa: 0, totalCredits: 0, partialCount: 0 });
     let totalPoints = 0, totalCredits = 0, partialCount = 0;
     grades.forEach(g => {
-      // Skip courses with no credits
       if (!g.course?.credits) return;
-      // Skip ungraded retake placeholders أ¢â‚¬â€‌ re-enrolled but not yet graded
       if (g.isRetake && g.gradePoint === 0 && g.grade === 'F') return;
-      if (!g.isFinalized) { partialCount++; return; }
+      if (!isGradeFinalized(g)) { partialCount++; return; }
       totalPoints  += g.gradePoint * g.course.credits;
       totalCredits += g.course.credits;
     });
@@ -330,12 +358,12 @@ router.get('/admin/student/:studentId', auth, isAdmin, async (req, res) => {
       ? grades
       : grades.filter(g => canAccessCourse(req, (g.course?._id || g.course)));
 
-    // CGPA only from finalized grades (final exam has been graded)
-    const finalizedGrades = filteredGrades.filter(g => g.isFinalized !== false);
+    // CGPA only from finalized grades (uses isGradeFinalized to handle old records)
+    const finalizedGrades = filteredGrades.filter(g => isGradeFinalized(g));
     const totalWP = finalizedGrades.reduce((s, g) => s + (g.gradePoint * (g.course?.credits || 1)), 0);
     const totalCr = finalizedGrades.reduce((s, g) => s + (g.course?.credits || 1), 0);
     const cgpa = totalCr > 0 ? parseFloat((totalWP / totalCr).toFixed(2)) : 0;
-    const partialCount = filteredGrades.filter(g => g.isFinalized === false).length;
+    const partialCount = filteredGrades.filter(g => !isGradeFinalized(g)).length;
 
     res.json({ grades: filteredGrades, cgpa, totalGrades: filteredGrades.length, partialCount });
   } catch (error) {
