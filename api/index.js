@@ -61,13 +61,13 @@ const connectDB = async () => {
   if (connectionPromise) return connectionPromise;
 
   connectionPromise = mongoose.connect(process.env.MONGODB_URI, {
-    serverSelectionTimeoutMS: 8000,  // give Atlas more time on cold start
-    socketTimeoutMS: 20000,
-    connectTimeoutMS: 8000,
+    serverSelectionTimeoutMS: 15000, // give Atlas more time on cold start
+    socketTimeoutMS: 30000,
+    connectTimeoutMS: 15000,
     bufferCommands: true,            // queue ops while connecting — prevents "not connected" errors
     maxPoolSize: 5,
     minPoolSize: 1,
-    waitQueueTimeoutMS: 8000,
+    waitQueueTimeoutMS: 15000,
     heartbeatFrequencyMS: 10000,
     maxIdleTimeMS: 270000,
   }).then(() => {
