@@ -33,8 +33,12 @@ const materialSchema = new mongoose.Schema({
   fileUrl: {
     type: String
   },
+  cloudinaryPublicId: {
+    type: String,
+    default: null,
+  },
   fileData: {
-    type: String  // base64 encoded file content
+    type: String  // base64 encoded file content — only for legacy records
   },
   fileMimeType: {
     type: String

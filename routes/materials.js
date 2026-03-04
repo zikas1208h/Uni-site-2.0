@@ -7,6 +7,7 @@ const User = require('../models/User');
 const Notification = require('../models/Notification');
 const { auth, isAdmin, requireSuperAdmin, isSuperAdmin, getEffectiveCourseIds } = require('../middleware/auth');
 const { sendError } = require('../utils/errorResponse');
+const { uploadToCloudinary, deleteFromCloudinary, isCloudinaryConfigured } = require('../utils/cloudinary');
 
 // Configure multer for memory storage (works on Vercel serverless)
 const storage = multer.memoryStorage();
@@ -16,25 +17,26 @@ const upload = multer({
   limits: { fileSize: 50 * 1024 * 1024 } // 50MB limit
 });
 
-// â”€â”€ Helper â€” uses req.user already populated by auth middleware â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Helper ── uses req.user already populated by auth middleware ─────────────────
 const canAccessCourse = (req, courseId) => {
   if (isSuperAdmin(req.user)) return true;
   const ids = getEffectiveCourseIds(req.user).map(id => id.toString());
   return ids.includes((courseId?._id || courseId)?.toString());
 };
 
-// â”€â”€ All materials (admin/staff) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── All materials (admin/staff) ─────────────────────────────────────────────────
 router.get('/all', auth, isAdmin, async (req, res) => {
   try {
     let query = {};
     if (!isSuperAdmin(req.user)) {
-      // Use req.user already populated by auth middleware â€” no extra DB call
+      // Use req.user already populated by auth middleware — no extra DB call
       const ids = getEffectiveCourseIds(req.user);
       if (ids.length === 0) return res.json([]);
       query.course = { $in: ids };
     }
 
     const materials = await Material.find(query)
+      .select('-fileData')
       .populate('course', 'courseCode courseName')
       .populate('uploadedBy', 'firstName lastName email')
       .sort({ createdAt: -1 })
@@ -46,7 +48,7 @@ router.get('/all', auth, isAdmin, async (req, res) => {
   }
 });
 
-// â”€â”€ Materials for a course (enrolled students + staff) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Materials for a course (enrolled students + staff) ─────────────────────────
 router.get('/course/:courseId', auth, async (req, res) => {
   try {
     const user = await User.findById(req.userId);
@@ -57,6 +59,7 @@ router.get('/course/:courseId', auth, async (req, res) => {
     }
 
     const materials = await Material.find({ course: req.params.courseId })
+      .select('-fileData')
       .populate('course', 'courseCode courseName')
       .sort({ createdAt: -1 });
 
@@ -66,7 +69,7 @@ router.get('/course/:courseId', auth, async (req, res) => {
   }
 });
 
-// â”€â”€ My materials (student) â€” MUST be before /:id â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── My materials (student) ─────────────────────────────────────────────────────
 router.get('/my-materials', auth, async (req, res) => {
   try {
     const user = await User.findById(req.userId);
@@ -87,19 +90,22 @@ router.get('/my-materials', auth, async (req, res) => {
   }
 });
 
-// â”€â”€ Download material â€” MUST be before /:id â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Download material — redirect to Cloudinary or stream legacy base64 ──────
 router.get('/download/:id', auth, async (req, res) => {
   try {
-    const material = await Material.findById(req.params.id).select('+fileData +fileMimeType +fileName');
+    const material = await Material.findById(req.params.id)
+      .select('+fileData +fileMimeType +fileName +fileUrl cloudinaryPublicId');
     if (!material) return res.status(404).json({ message: 'Material not found' });
+
+    // NEW: Cloudinary — just redirect, browser handles the download
+    if (material.fileUrl && material.fileUrl.startsWith('http')) {
+      return res.redirect(302, material.fileUrl);
+    }
+    // LEGACY: base64 in MongoDB
     if (!material.fileData) return res.status(404).json({ message: 'File data not found.' });
-
     const buffer = Buffer.from(material.fileData, 'base64');
-    const mimeType = material.fileMimeType || 'application/octet-stream';
-    const fileName = material.fileName || 'download';
-
-    res.setHeader('Content-Type', mimeType);
-    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(fileName)}"`);
+    res.setHeader('Content-Type', material.fileMimeType || 'application/octet-stream');
+    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(material.fileName || 'download')}"`);
     res.setHeader('Content-Length', buffer.length);
     res.send(buffer);
   } catch (error) {
@@ -107,7 +113,7 @@ router.get('/download/:id', auth, async (req, res) => {
   }
 });
 
-// â”€â”€ Material by ID â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Material by ID ─────────────────────────────────────────────────────────────
 router.get('/:id', auth, async (req, res) => {
   try {
     const material = await Material.findById(req.params.id).populate('course');
@@ -126,7 +132,7 @@ router.get('/:id', auth, async (req, res) => {
   }
 });
 
-// â”€â”€ Upload material (doctor/assistant/superadmin â€” only assigned courses) â”€â”€â”€â”€â”€â”€â”€
+// ── Upload material (doctor/assistant/superadmin — only assigned courses) ────────
 router.post('/', auth, isAdmin, upload.single('file'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ message: 'No file uploaded' });
@@ -142,15 +148,31 @@ router.post('/', auth, isAdmin, upload.single('file'), async (req, res) => {
       return res.status(403).json({ message: 'You do not have access to this course' });
     }
 
-    const fileData = req.file.buffer.toString('base64');
+    // NEW: Upload to Cloudinary if configured, else fall back to base64 (dev only)
+    let fileUrl = null, cloudinaryPublicId = null, fileData = null;
+    if (isCloudinaryConfigured()) {
+      const result = await uploadToCloudinary(req.file.buffer, {
+        folder: 'materials',
+        filename: req.file.originalname,
+        mimetype: req.file.mimetype,
+      });
+      fileUrl = result.url;
+      cloudinaryPublicId = result.publicId;
+    } else {
+      // fallback for local dev without Cloudinary credentials
+      fileData = req.file.buffer.toString('base64');
+    }
+
     const material = new Material({
       course, title, description, type,
-      fileName: req.file.originalname,
-      filePath: `uploads/${Date.now()}-${req.file.originalname}`,
-      fileSize: req.file.size,
-      fileData,
-      fileMimeType: req.file.mimetype,
-      uploadedBy: uploadedBy || req.userId,
+      fileName:           req.file.originalname,
+      filePath:           fileUrl || `uploads/${Date.now()}-${req.file.originalname}`,
+      fileUrl:            fileUrl,
+      cloudinaryPublicId: cloudinaryPublicId,
+      fileSize:           req.file.size,
+      fileData:           fileData,   // null when Cloudinary used
+      fileMimeType:       req.file.mimetype,
+      uploadedBy:         uploadedBy || req.userId,
     });
     await material.save();
 
@@ -189,7 +211,7 @@ router.post('/', auth, isAdmin, upload.single('file'), async (req, res) => {
   }
 });
 
-// â”€â”€ Update material â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Update material ───────────────────────────────────────────────────────────
 router.put('/:id', auth, isAdmin, async (req, res) => {
   try {
     const material = await Material.findById(req.params.id);
@@ -204,7 +226,7 @@ router.put('/:id', auth, isAdmin, async (req, res) => {
   }
 });
 
-// â”€â”€ Delete material (doctor â€” own courses; superadmin â€” all) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Delete material (doctor — own courses; superadmin — all) ─────────────────
 router.delete('/:id', auth, isAdmin, async (req, res) => {
   try {
     const material = await Material.findById(req.params.id);
@@ -214,6 +236,10 @@ router.delete('/:id', auth, isAdmin, async (req, res) => {
     }
 
     await Material.findByIdAndDelete(req.params.id);
+    // Clean up Cloudinary asset
+    if (material.cloudinaryPublicId) {
+      await deleteFromCloudinary(material.cloudinaryPublicId, material.fileMimeType);
+    }
     res.json({ message: 'Material deleted successfully' });
   } catch (error) {
     return sendError(res, 500, 'Error deleting material', error);

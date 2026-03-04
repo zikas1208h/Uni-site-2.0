@@ -8,6 +8,7 @@ const Grade = require('../models/Grade');
 const Notification = require('../models/Notification');
 const { auth, isAdmin, isSuperAdmin } = require('../middleware/auth');
 const { sendError } = require('../utils/errorResponse');
+const { uploadToCloudinary, deleteFromCloudinary, isCloudinaryConfigured } = require('../utils/cloudinary');
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 
@@ -157,9 +158,13 @@ router.get('/staff', auth, isAdmin, async (req, res) => {
 router.get('/download/:id', auth, async (req, res) => {
   try {
     const assignment = await Assignment.findById(req.params.id);
-    if (!assignment || !assignment.fileData)
-      return res.status(404).json({ message: 'No file attached to this assignment' });
-
+    if (!assignment) return res.status(404).json({ message: 'Assignment not found' });
+    // NEW: Cloudinary redirect
+    if (assignment.fileUrl && assignment.fileUrl.startsWith('http')) {
+      return res.redirect(302, assignment.fileUrl);
+    }
+    // LEGACY: base64
+    if (!assignment.fileData) return res.status(404).json({ message: 'No file attached to this assignment' });
     const buffer = Buffer.from(assignment.fileData, 'base64');
     res.setHeader('Content-Type', assignment.fileMimeType || 'application/octet-stream');
     res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(assignment.fileName)}"`);
@@ -215,11 +220,25 @@ router.post('/', auth, isAdmin, upload.single('file'), async (req, res) => {
     };
 
     if (req.file) {
-      assignmentData.fileName    = req.file.originalname;
-      assignmentData.filePath    = `assignments/${Date.now()}-${req.file.originalname}`;
-      assignmentData.fileSize    = req.file.size;
-      assignmentData.fileData    = req.file.buffer.toString('base64');
-      assignmentData.fileMimeType= req.file.mimetype;
+      if (isCloudinaryConfigured()) {
+        const result = await uploadToCloudinary(req.file.buffer, {
+          folder: 'assignments',
+          filename: req.file.originalname,
+          mimetype: req.file.mimetype,
+        });
+        assignmentData.fileName    = req.file.originalname;
+        assignmentData.filePath    = result.url;
+        assignmentData.fileUrl     = result.url;
+        assignmentData.cloudinaryPublicId = result.publicId;
+        assignmentData.fileSize    = req.file.size;
+        assignmentData.fileMimeType= req.file.mimetype;
+      } else {
+        assignmentData.fileName    = req.file.originalname;
+        assignmentData.filePath    = `assignments/${Date.now()}-${req.file.originalname}`;
+        assignmentData.fileSize    = req.file.size;
+        assignmentData.fileData    = req.file.buffer.toString('base64');
+        assignmentData.fileMimeType= req.file.mimetype;
+      }
     }
 
     const assignment = await Assignment.create(assignmentData);
@@ -261,11 +280,26 @@ router.put('/:id', auth, isAdmin, upload.single('file'), async (req, res) => {
     fields.forEach(f => { if (req.body[f] !== undefined) assignment[f] = req.body[f]; });
 
     if (req.file) {
-      assignment.fileName = req.file.originalname;
-      assignment.filePath = `assignments/${Date.now()}-${req.file.originalname}`;
-      assignment.fileSize = req.file.size;
-      assignment.fileData = req.file.buffer.toString('base64');
-      assignment.fileMimeType = req.file.mimetype;
+      if (isCloudinaryConfigured()) {
+        // Delete old file if exists
+        if (assignment.cloudinaryPublicId) await deleteFromCloudinary(assignment.cloudinaryPublicId, assignment.fileMimeType);
+        const result = await uploadToCloudinary(req.file.buffer, {
+          folder: 'assignments', filename: req.file.originalname, mimetype: req.file.mimetype,
+        });
+        assignment.fileName = req.file.originalname;
+        assignment.filePath = result.url;
+        assignment.fileUrl  = result.url;
+        assignment.cloudinaryPublicId = result.publicId;
+        assignment.fileSize = req.file.size;
+        assignment.fileMimeType = req.file.mimetype;
+        assignment.fileData = null;
+      } else {
+        assignment.fileName = req.file.originalname;
+        assignment.filePath = `assignments/${Date.now()}-${req.file.originalname}`;
+        assignment.fileSize = req.file.size;
+        assignment.fileData = req.file.buffer.toString('base64');
+        assignment.fileMimeType = req.file.mimetype;
+      }
     }
     await assignment.save();
     const { fileData: _, ...safe } = assignment.toObject();

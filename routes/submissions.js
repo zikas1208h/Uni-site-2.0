@@ -7,6 +7,7 @@ const Assignment = require('../models/Assignment');
 const User = require('../models/User');
 const { auth, isAdmin, isSuperAdmin } = require('../middleware/auth');
 const { sendError } = require('../utils/errorResponse');
+const { uploadToCloudinary, deleteFromCloudinary, isCloudinaryConfigured } = require('../utils/cloudinary');
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -27,7 +28,7 @@ const canAccessCourse = (user, courseId) => {
   return assigned.includes(courseId?.toString());
 };
 
-// â”€â”€ POST /submissions  â€” student submits a file â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// â”€â”€ POST /submissions  â€” student submits a file â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 router.post('/', auth, upload.single('file'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ message: 'No file uploaded' });
@@ -47,20 +48,34 @@ router.post('/', auth, upload.single('file'), async (req, res) => {
       return res.status(400).json({ message: 'The submission deadline has passed' });
     }
 
-    // Upsert â€” allow resubmission before deadline
-    const fileData = req.file.buffer.toString('base64');
+    // Upload file — Cloudinary if configured, legacy base64 fallback
+    let fileData = null, fileUrl = null, cloudinaryPublicId = null;
+    if (isCloudinaryConfigured()) {
+      const result = await uploadToCloudinary(req.file.buffer, {
+        folder: 'submissions',
+        filename: req.file.originalname,
+        mimetype: req.file.mimetype,
+      });
+      fileUrl = result.url;
+      cloudinaryPublicId = result.publicId;
+    } else {
+      fileData = req.file.buffer.toString('base64');
+    }
+
     const submission = await Submission.findOneAndUpdate(
       { assignment: assignmentId, student: req.userId },
       {
         assignment: assignmentId,
         student: req.userId,
         course: assignment.course,
-        fileName: req.file.originalname,
-        fileSize: req.file.size,
-        fileData,
-        fileMimeType: req.file.mimetype,
-        status: 'submitted',
-        submittedAt: new Date(),
+        fileName:           req.file.originalname,
+        fileSize:           req.file.size,
+        fileData:           fileData,
+        fileUrl:            fileUrl,
+        cloudinaryPublicId: cloudinaryPublicId,
+        fileMimeType:       req.file.mimetype,
+        status:             'submitted',
+        submittedAt:        new Date(),
       },
       { upsert: true, new: true }
     );
@@ -118,7 +133,6 @@ router.get('/download/:id', auth, async (req, res) => {
     const sub = await Submission.findById(req.params.id);
     if (!sub) return res.status(404).json({ message: 'Submission not found' });
 
-    // Only the owner OR staff with course access can download
     const isOwner = sub.student.toString() === req.userId.toString();
     if (!isOwner) {
       const assignment = await Assignment.findById(sub.assignment).lean();
@@ -127,6 +141,12 @@ router.get('/download/:id', auth, async (req, res) => {
       }
     }
 
+    // NEW: Cloudinary — just redirect
+    if (sub.fileUrl && sub.fileUrl.startsWith('http')) {
+      return res.redirect(302, sub.fileUrl);
+    }
+    // LEGACY: base64 in MongoDB
+    if (!sub.fileData) return res.status(404).json({ message: 'File not found' });
     const buffer = Buffer.from(sub.fileData, 'base64');
     res.setHeader('Content-Type', sub.fileMimeType || 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(sub.fileName)}"`);
@@ -198,13 +218,33 @@ router.get('/assignment/:assignmentId/download-all', auth, isAdmin, async (req, 
     archive.pipe(res);
 
     for (const sub of submissions) {
-      if (!sub.fileData) continue;
-      const buf = Buffer.from(sub.fileData, 'base64');
       const sName = sub.student
         ? `${sub.student.studentId || 'unknown'}_${sub.student.firstName || ''}_${sub.student.lastName || ''}`
         : 'unknown_student';
       const safeSName = sName.replace(/[^a-zA-Z0-9_\-]/g, '_');
       const ext = sub.fileName ? sub.fileName.split('.').pop() : 'bin';
+
+      // NEW: Cloudinary — fetch file buffer from URL
+      if (sub.fileUrl && sub.fileUrl.startsWith('http')) {
+        try {
+          const https = require('https');
+          const http = require('http');
+          const fetcher = sub.fileUrl.startsWith('https') ? https : http;
+          const buf = await new Promise((resolve, reject) => {
+            fetcher.get(sub.fileUrl, (r) => {
+              const chunks = [];
+              r.on('data', c => chunks.push(c));
+              r.on('end', () => resolve(Buffer.concat(chunks)));
+              r.on('error', reject);
+            }).on('error', reject);
+          });
+          archive.append(buf, { name: `${safeSName}.${ext}` });
+        } catch { /* skip this submission if fetch fails */ }
+        continue;
+      }
+      // LEGACY: base64
+      if (!sub.fileData) continue;
+      const buf = Buffer.from(sub.fileData, 'base64');
       archive.append(buf, { name: `${safeSName}.${ext}` });
     }
 

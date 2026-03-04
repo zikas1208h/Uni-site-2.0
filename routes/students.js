@@ -4,6 +4,7 @@ const User = require('../models/User');
 const { auth, isAdmin, requireSuperAdmin, isSuperAdmin, getEffectiveCourseIds } = require('../middleware/auth');
 const multer = require('multer');
 const { sendError } = require('../utils/errorResponse');
+const { uploadToCloudinary, isCloudinaryConfigured } = require('../utils/cloudinary');
 
 // Use memory storage â€” Vercel has no writable filesystem
 const upload = multer({
@@ -65,18 +66,30 @@ router.put('/profile', auth, async (req, res) => {
   }
 });
 
-// Upload profile picture â€” stored as base64 in MongoDB (works on Vercel)
+// Upload profile picture — Cloudinary if configured, base64 fallback for dev
 router.post('/profile/picture', auth, upload.single('profilePicture'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ message: 'No file uploaded' });
-    // Convert buffer to base64 data URL
-    const base64 = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;
+
+    let profilePicture;
+    if (isCloudinaryConfigured()) {
+      const result = await uploadToCloudinary(req.file.buffer, {
+        folder: 'profile-pictures',
+        filename: `${req.userId}_${Date.now()}.jpg`,
+        mimetype: req.file.mimetype,
+      });
+      profilePicture = result.url; // Clean Cloudinary URL — NOT a 50KB base64 string
+    } else {
+      // Dev fallback
+      profilePicture = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;
+    }
+
     const user = await User.findByIdAndUpdate(
       req.userId,
-      { profilePicture: base64 },
+      { profilePicture },
       { new: true }
     ).select('-password');
-    res.json({ message: 'Profile picture updated', profilePicture: base64, user });
+    res.json({ message: 'Profile picture updated', profilePicture, user });
   } catch (error) {
     return sendError(res, 500, 'Error uploading picture', error);
   }

@@ -16,11 +16,13 @@ const submissionSchema = new mongoose.Schema({
     ref: 'Course',
     required: true,
   },
-  // Uploaded file (stored as base64)
-  fileName:    { type: String, required: true },
-  fileSize:    { type: Number, default: 0 },
-  fileData:    { type: String, required: true },   // base64
-  fileMimeType:{ type: String, default: 'application/pdf' },
+  // Uploaded file — Cloudinary URL (new) or base64 (legacy)
+  fileName:           { type: String, required: true },
+  fileSize:           { type: Number, default: 0 },
+  fileData:           { type: String, default: null },    // base64 — null for new Cloudinary records
+  fileUrl:            { type: String, default: null },    // Cloudinary URL
+  cloudinaryPublicId: { type: String, default: null },    // for deletion
+  fileMimeType:       { type: String, default: 'application/pdf' },
 
   // Staff feedback (optional)
   feedback:    { type: String, default: '' },

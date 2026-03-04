@@ -5,6 +5,7 @@ const Course = require('../models/Course');
 const User = require('../models/User');
 const { auth, isAdmin, requireSuperAdmin, isSuperAdmin, getEffectiveCourseIds } = require('../middleware/auth');
 const { sendError } = require('../utils/errorResponse');
+const sc = require('../utils/serverCache');
 
 // أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬ Helper أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬
 const extractId = (c) => (c._id || c).toString();
@@ -191,23 +192,24 @@ router.get('/student', auth, async (req, res) => {
   }
 });
 
-// أ¢â€‌â‚¬أ¢â€‌â‚¬ Calculate GPA أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬أ¢â€‌â‚¬
-// Skip: (1) records with no credits, (2) ungraded retake placeholders (isRetake=true, grade still F/0)
 router.get('/gpa', auth, async (req, res) => {
   try {
-    const grades = await Grade.find({ student: req.userId })
-      .populate('course', 'credits').lean();
-    if (grades.length === 0) return res.json({ gpa: 0, totalCredits: 0, partialCount: 0 });
-    let totalPoints = 0, totalCredits = 0, partialCount = 0;
-    grades.forEach(g => {
-      if (!g.course?.credits) return;
-      if (g.isRetake && g.gradePoint === 0 && g.grade === 'F') return;
-      if (!isGradeFinalized(g)) { partialCount++; return; }
-      totalPoints  += g.gradePoint * g.course.credits;
-      totalCredits += g.course.credits;
-    });
-    if (totalCredits === 0) return res.json({ gpa: 0, totalCredits: 0, partialCount });
-    res.json({ gpa: parseFloat((totalPoints / totalCredits).toFixed(2)), totalCredits, partialCount });
+    const uid = req.userId.toString();
+    const result = await sc.getOrSet(`gpa:${uid}`, async () => {
+      const grades = await Grade.find({ student: uid }).populate('course', 'credits').lean();
+      if (!grades.length) return { gpa: 0, totalCredits: 0, partialCount: 0 };
+      let totalPoints = 0, totalCredits = 0, partialCount = 0;
+      grades.forEach(g => {
+        if (!g.course?.credits) return;
+        if (g.isRetake && g.gradePoint === 0 && g.grade === 'F') return;
+        if (!isGradeFinalized(g)) { partialCount++; return; }
+        totalPoints  += g.gradePoint * g.course.credits;
+        totalCredits += g.course.credits;
+      });
+      if (totalCredits === 0) return { gpa: 0, totalCredits: 0, partialCount };
+      return { gpa: parseFloat((totalPoints / totalCredits).toFixed(2)), totalCredits, partialCount };
+    }, sc.TTL.GPA);
+    res.json(result);
   } catch (error) {
     return sendError(res, 500, 'Error calculating GPA', error);
   }
@@ -329,6 +331,10 @@ router.post('/', auth, isAdmin, async (req, res) => {
       courseDoc.status = 'completed';
       await courseDoc.save();
     }
+
+    // Invalidate server cache for this student so next request re-computes
+    sc.del(`gpa:${student.toString()}`);
+    sc.del(`dashboard:student:${student.toString()}`);
 
     res.status(201).json(response);
   } catch (error) {

@@ -39,8 +39,10 @@ const assignmentSchema = new mongoose.Schema({
   fileName: { type: String, default: '' },
   filePath: { type: String, default: '' },
   fileSize: { type: Number, default: 0 },
-  fileData: { type: String, default: '' },      // base64
+  fileData: { type: String, default: '' },      // base64 — legacy only, null for Cloudinary records
   fileMimeType: { type: String, default: '' },
+  fileUrl:            { type: String, default: null },   // Cloudinary URL
+  cloudinaryPublicId: { type: String, default: null },   // for deletion
 
   deadline: { type: Date, required: true },
   totalMarks: { type: Number, default: 100 },
