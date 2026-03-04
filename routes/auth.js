@@ -292,8 +292,39 @@ router.post('/send-otp', auth, async (req, res) => {
 
     res.json({ message: `Verification code sent to ${newEmail}. Check your inbox.` });
   } catch (e) {
-    console.error('send-otp error:', e.message);
-    return sendError(res, 500, 'Failed to send verification email. Check SMTP settings.', e);
+    console.error('send-otp error:', e.message, e.code, e.responseCode);
+    // Return the real SMTP error so it can be diagnosed
+    return res.status(500).json({
+      message: 'Failed to send verification email.',
+      smtpError: e.message,
+      smtpCode: e.code,
+      smtpUser: process.env.SMTP_USER || 'NOT SET',
+      smtpService: process.env.SMTP_SERVICE || 'NOT SET',
+      smtpPassLen: (process.env.SMTP_PASS || '').replace(/\s+/g,'').length,
+    });
+  }
+});
+
+// ── GET /auth/test-smtp  ─────────────────────────────────────────────────────
+// Temporary debug endpoint — tests SMTP connection without sending email
+router.get('/test-smtp', async (req, res) => {
+  try {
+    const nodemailer = require('nodemailer');
+    const pass = (process.env.SMTP_PASS || '').replace(/\s+/g, '');
+    const user = process.env.SMTP_USER || '';
+    if (!user || !pass) {
+      return res.json({ ok: false, reason: 'SMTP_USER or SMTP_PASS not set', user, passLen: pass.length });
+    }
+    const t = nodemailer.createTransport({
+      host: 'smtp.gmail.com', port: 465, secure: true,
+      auth: { user, pass },
+      tls: { rejectUnauthorized: false },
+      connectionTimeout: 10000,
+    });
+    await t.verify();
+    res.json({ ok: true, user, passLen: pass.length });
+  } catch (e) {
+    res.json({ ok: false, error: e.message, code: e.code, user: process.env.SMTP_USER, passLen: (process.env.SMTP_PASS||'').replace(/\s+/g,'').length });
   }
 });
 
