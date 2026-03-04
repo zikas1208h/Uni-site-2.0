@@ -7,6 +7,19 @@ const User           = require('../models/User');
 const { auth, isAdmin, requireSuperAdmin } = require('../middleware/auth');
 const { sendError } = require('../utils/errorResponse');
 const { generateMasterSchedule, generateSchedule } = require('../utils/scheduleGenerator');
+const sc = require('../utils/serverCache');
+
+// Cache key helpers
+const SCHED_MASTER_KEY  = 'schedule:master';
+const SCHED_VENUES_KEY  = 'schedule:venues';
+const schedStaffKey = (id) => `schedule:staff:${id}`;
+const schedStudentKey = (id) => `schedule:student:${id}`;
+const invalidateScheduleCache = () => {
+  sc.del(SCHED_MASTER_KEY);
+  sc.del(SCHED_VENUES_KEY);
+  sc.del('schedule:staff:');   // wipes all staff schedule keys (prefix)
+  sc.del('schedule:student:'); // wipes all student schedule keys (prefix)
+};
 
 const getOrCreateConfig = async () => {
   let cfg = await ScheduleConfig.findOne();
@@ -127,8 +140,11 @@ router.post('/generate-master', auth, requireSuperAdmin, async (req, res) => {
     );
 
     const scope = filterYear
-      ? ` (Year ${filterYear}${filterSemester ? ` آ· ${filterSemester}` : ''} â€” ${courses.length} courses)`
+      ? ` (Year ${filterYear}${filterSemester ? ` · ${filterSemester}` : ''} — ${courses.length} courses)`
       : ` (${courses.length} courses)`;
+
+    // Invalidate schedule caches so next read reflects new data
+    invalidateScheduleCache();
 
     res.json({
       message: `Master schedule generated${scope}: ${slots.length} slots, ${warnings.length} warnings.`,
@@ -140,30 +156,34 @@ router.post('/generate-master', auth, requireSuperAdmin, async (req, res) => {
   } catch (e) { return sendError(res, 500, 'An error occurred', e); }
 });
 
-// GET /schedule/master  â€” view the most recent master schedule
+// GET /schedule/master  — view the most recent master schedule (cached 10 min)
 router.get('/master', auth, isAdmin, async (req, res) => {
   try {
-    // Return the most recently generated master schedule (any semester/year)
-    const master = await MasterSchedule.findOne().sort({ generatedAt: -1 }).lean();
+    const master = await sc.getOrSet(SCHED_MASTER_KEY, async () => {
+      return await MasterSchedule.findOne().sort({ generatedAt: -1 }).lean();
+    }, sc.TTL.SCHEDULE);
     if (!master) return res.status(404).json({ message: 'No master schedule generated yet.' });
     res.json(master);
   } catch (e) { return sendError(res, 500, 'An error occurred', e); }
 });
 
-// DELETE /schedule/master  â€” wipe the master schedule (superadmin only)
+// DELETE /schedule/master  — wipe the master schedule (superadmin only)
 router.delete('/master', auth, requireSuperAdmin, async (req, res) => {
   try {
     const deleted = await MasterSchedule.findOneAndDelete({}, { sort: { generatedAt: -1 } });
     if (!deleted) return res.status(404).json({ message: 'No master schedule found to delete.' });
     await Schedule.deleteMany({});
+    invalidateScheduleCache();
     res.json({ message: `Master schedule (${deleted.semester} ${deleted.year}) deleted. All student schedules cleared.` });
   } catch (e) { return sendError(res, 500, 'An error occurred', e); }
 });
 
-// GET /schedule/venues  â€” availability of every venue across the week
+// GET /schedule/venues  — availability of every venue across the week (cached 10 min)
 // Returns: { venues: [ { name, type, days: { Sunday: [ {start,end,free} ] } } ] }
 router.get('/venues', auth, isAdmin, async (req, res) => {
   try {
+    const cached = sc._cache.get(SCHED_VENUES_KEY);
+    if (cached !== undefined) return res.json(cached);
     const master = await MasterSchedule.findOne().sort({ generatedAt: -1 }).lean();
 
     // All fixed time slots (08:00â€“18:00, 2h each)
@@ -214,7 +234,9 @@ router.get('/venues', auth, isAdmin, async (req, res) => {
       return { name: v.name, type: v.type, days };
     });
 
-    res.json({ venues, generatedAt: master?.generatedAt || null });
+    const payload = { venues, generatedAt: master?.generatedAt || null };
+    sc._cache.set(SCHED_VENUES_KEY, payload, sc.TTL.SCHEDULE);
+    res.json(payload);
   } catch (e) { return sendError(res, 500, 'An error occurred', e); }
 });
 
@@ -375,26 +397,34 @@ router.get('/staff-list', auth, isAdmin, async (req, res) => {
   } catch (e) { return sendError(res, 500, 'An error occurred', e); }
 });
 
-// GET /schedule/staff/me â€” returns this doctor/assistant's own slots from master
+// GET /schedule/staff/me — returns this doctor/assistant's own slots from master (cached 10 min)
 router.get('/staff/me', auth, async (req, res) => {
   try {
-    const master = await MasterSchedule.findOne().sort({ generatedAt: -1 }).lean();
-    if (!master) return res.status(404).json({ message: 'No master schedule generated yet.' });
     const myId = String(req.userId);
-    const slots = (master.slots || []).filter(s => String(s.staffId) === myId);
-    res.json({ slots, semester: master.semester, year: master.year, totalSlots: slots.length, generatedAt: master.generatedAt });
+    const result = await sc.getOrSet(schedStaffKey(myId), async () => {
+      const master = await MasterSchedule.findOne().sort({ generatedAt: -1 }).lean();
+      if (!master) return null;
+      const slots = (master.slots || []).filter(s => String(s.staffId) === myId);
+      return { slots, semester: master.semester, year: master.year, totalSlots: slots.length, generatedAt: master.generatedAt };
+    }, sc.TTL.SCHEDULE);
+    if (!result) return res.status(404).json({ message: 'No master schedule generated yet.' });
+    res.json(result);
   } catch (e) { return sendError(res, 500, 'An error occurred', e); }
 });
 
-// GET /schedule/staff/:staffId â€” admin views any staff member's slots
+// GET /schedule/staff/:staffId — admin views any staff member's slots (cached 10 min)
 router.get('/staff/:staffId', auth, isAdmin, async (req, res) => {
   try {
-    const master = await MasterSchedule.findOne().sort({ generatedAt: -1 }).lean();
-    if (!master) return res.status(404).json({ message: 'No master schedule generated yet.' });
     const staffId = String(req.params.staffId);
-    const slots = (master.slots || []).filter(s => String(s.staffId) === staffId);
-    const staff = await User.findById(staffId).select('firstName lastName role email').lean();
-    res.json({ slots, staff, semester: master.semester, year: master.year, totalSlots: slots.length });
+    const result = await sc.getOrSet(schedStaffKey(staffId), async () => {
+      const master = await MasterSchedule.findOne().sort({ generatedAt: -1 }).lean();
+      if (!master) return null;
+      const slots = (master.slots || []).filter(s => String(s.staffId) === staffId);
+      const staff = await User.findById(staffId).select('firstName lastName role email').lean();
+      return { slots, staff, semester: master.semester, year: master.year, totalSlots: slots.length };
+    }, sc.TTL.SCHEDULE);
+    if (!result) return res.status(404).json({ message: 'No master schedule generated yet.' });
+    res.json(result);
   } catch (e) { return sendError(res, 500, 'An error occurred', e); }
 });
 
