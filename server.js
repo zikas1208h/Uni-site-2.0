@@ -132,7 +132,7 @@ app.get('/health', (req, res) => {
 
 // Basic route
 app.get('/', (req, res) => {
-  res.json({ message: 'HNU Portal API', version: '1.0.0', status: 'running' });
+  res.json({ message: 'HNU Portal API', version: '1.0.1', status: 'running' });
 });
 
 // 404 Handler
