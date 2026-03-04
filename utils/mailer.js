@@ -1,5 +1,8 @@
 const nodemailer = require('nodemailer');
 
+// Google App Passwords are displayed as "xxxx xxxx xxxx xxxx" — strip spaces defensively
+const smtpPass = () => (process.env.SMTP_PASS || '').replace(/\s+/g, '');
+
 // Build a transporter from env vars.
 const createTransporter = () => {
   if (process.env.SMTP_SERVICE === 'gmail') {
@@ -9,10 +12,10 @@ const createTransporter = () => {
       secure: true,          // SSL on port 465
       auth: {
         user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS,
+        pass: smtpPass(),
       },
       tls: {
-        rejectUnauthorized: false,  // handles self-signed cert chain in some envs
+        rejectUnauthorized: false,
       },
     });
   }
@@ -23,7 +26,7 @@ const createTransporter = () => {
     secure: process.env.SMTP_SECURE === 'true',
     auth: {
       user: process.env.SMTP_USER,
-      pass: process.env.SMTP_PASS,
+      pass: smtpPass(),
     },
     tls: { rejectUnauthorized: false },
   });
