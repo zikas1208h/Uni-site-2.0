@@ -263,26 +263,22 @@ router.post('/', auth, isAdmin, upload.single('file'), async (req, res) => {
 
     const { fileData: _, ...safeAssignment } = assignment.toObject();
 
-    // ── Auto-add classwork entry to every enrolled student's Grade doc ──────
-    // Only for assignments and quizzes (not exam announcements for midterm/final —
-    // those are handled via the semester grade route)
-    const isClassworkType = !assignmentData.isAnnouncement ||
-      (assignmentData.examType === 'quiz') ||
-      (assignmentData.examType === 'none');
+    // ── Auto-add classwork entry for assignments, quizzes, and midterms ──────
+    // finals are NOT added to classwork — they live in semesterGrade only.
+    const examT = assignmentData.examType || 'none';
+    const isClassworkType = examT !== 'final'; // everything except final goes to classwork
 
     if (isClassworkType) {
       try {
-        const entryType = assignmentData.examType === 'quiz' ? 'quiz'
-          : assignmentData.examType === 'none' ? 'assignment'
-          : 'other';
+        const entryType = examT === 'quiz'    ? 'quiz'
+                        : examT === 'midterm' ? 'midterm'
+                        : 'assignment';
 
         const studentIds = await getStudentsForCourse(course);
         if (studentIds.length) {
-          // For each student, upsert a Grade doc and push the classwork entry
           await Promise.all(studentIds.map(async (sId) => {
             const existing = await Grade.findOne({ student: sId, course });
             if (existing) {
-              // Only add if not already present
               const alreadyAdded = existing.classwork.some(e => e.assignmentId?.toString() === assignment._id.toString());
               if (!alreadyAdded) {
                 existing.classwork.push({
@@ -297,7 +293,6 @@ router.post('/', auth, isAdmin, upload.single('file'), async (req, res) => {
                 await existing.save();
               }
             } else {
-              // Create a new grade doc with just the classwork entry
               const courseDoc2 = await Course.findById(course).select('semester year').lean();
               await Grade.create({
                 student:  sId,

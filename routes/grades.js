@@ -7,25 +7,18 @@ const { auth, isAdmin, requireSuperAdmin, isSuperAdmin, getEffectiveCourseIds } 
 const { sendError } = require('../utils/errorResponse');
 const sc = require('../utils/serverCache');
 
-const { calcLetterGradeFromTotal, applyRetakeCap } = require('../models/Grade');
-
 const canAccessCourse = (req, courseId) => {
   if (isSuperAdmin(req.user)) return true;
   const ids = getEffectiveCourseIds(req.user).map(id => id.toString());
   return ids.includes(courseId?.toString());
 };
 
-// ── Grade statistics (superadmin) ─────────────────────────────────────────────
+// ── Statistics (superadmin) ───────────────────────────────────────────────────
 router.get('/statistics', auth, requireSuperAdmin, async (req, res) => {
   try {
     const courseStats = await Grade.aggregate([
       { $match: { 'semesterGrade.isFinalized': true } },
-      { $group: {
-          _id: '$course',
-          averageGradePoint: { $avg: '$semesterGrade.gradePoint' },
-          totalStudents: { $sum: 1 },
-          grades: { $push: '$semesterGrade.grade' },
-      }},
+      { $group: { _id: '$course', averageGradePoint: { $avg: '$semesterGrade.gradePoint' }, totalStudents: { $sum: 1 }, grades: { $push: '$semesterGrade.grade' } } },
       { $lookup: { from: 'courses', localField: '_id', foreignField: '_id', as: 'courseInfo' } },
       { $unwind: '$courseInfo' },
       { $project: { courseCode: '$courseInfo.courseCode', courseName: '$courseInfo.courseName', averageGradePoint: { $round: ['$averageGradePoint', 2] }, totalStudents: 1, grades: 1 } },
@@ -33,9 +26,9 @@ router.get('/statistics', auth, requireSuperAdmin, async (req, res) => {
     ]);
     const majorStats = await Grade.aggregate([
       { $match: { 'semesterGrade.isFinalized': true } },
-      { $lookup: { from: 'users', localField: 'student', foreignField: '_id', as: 'studentInfo' } },
-      { $unwind: '$studentInfo' },
-      { $group: { _id: '$studentInfo.major', averageGradePoint: { $avg: '$semesterGrade.gradePoint' }, totalStudents: { $addToSet: '$student' }, totalGrades: { $sum: 1 } } },
+      { $lookup: { from: 'users', localField: 'student', foreignField: '_id', as: 'si' } },
+      { $unwind: '$si' },
+      { $group: { _id: '$si.major', averageGradePoint: { $avg: '$semesterGrade.gradePoint' }, totalStudents: { $addToSet: '$student' }, totalGrades: { $sum: 1 } } },
       { $project: { major: '$_id', averageGradePoint: { $round: ['$averageGradePoint', 2] }, totalStudents: { $size: '$totalStudents' }, totalGrades: 1 } },
       { $sort: { major: 1 } },
     ]);
@@ -43,7 +36,7 @@ router.get('/statistics', auth, requireSuperAdmin, async (req, res) => {
   } catch (e) { return sendError(res, 500, 'Error fetching statistics', e); }
 });
 
-// ── Grade statistics for assigned courses (doctor / assistant / superadmin) ───
+// ── Statistics for my courses (staff) ────────────────────────────────────────
 router.get('/statistics/my-courses', auth, isAdmin, async (req, res) => {
   try {
     let scopedCourseIds = null;
@@ -51,44 +44,23 @@ router.get('/statistics/my-courses', auth, isAdmin, async (req, res) => {
       scopedCourseIds = getEffectiveCourseIds(req.user);
       if (!scopedCourseIds.length) return res.json({ courseStatistics: [], majorStatistics: [], gradeDistribution: [] });
     }
-    const baseMatch = {
-      'semesterGrade.isFinalized': true,
-      ...(scopedCourseIds ? { course: { $in: scopedCourseIds } } : {}),
-    };
-
-    const courseQuery = scopedCourseIds ? { _id: { $in: scopedCourseIds } } : {};
-    const allCourses  = await Course.find(courseQuery).select('_id courseCode courseName major year semester status').lean();
-
-    const gradeAggRaw = await Grade.aggregate([
+    const baseMatch = { 'semesterGrade.isFinalized': true, ...(scopedCourseIds ? { course: { $in: scopedCourseIds } } : {}) };
+    const allCourses = await Course.find(scopedCourseIds ? { _id: { $in: scopedCourseIds } } : {}).select('_id courseCode courseName major year semester status').lean();
+    const gradeAgg = await Grade.aggregate([
       { $match: baseMatch },
-      { $group: {
-          _id: '$course',
-          averageGradePoint: { $avg: '$semesterGrade.gradePoint' },
-          totalStudents: { $sum: 1 },
-          grades: { $push: '$semesterGrade.grade' },
-          passCount: { $sum: { $cond: [{ $gte: ['$semesterGrade.gradePoint', 1.0] }, 1, 0] } },
-          failCount: { $sum: { $cond: [{ $lt:  ['$semesterGrade.gradePoint', 1.0] }, 1, 0] } },
-      }},
+      { $group: { _id: '$course', averageGradePoint: { $avg: '$semesterGrade.gradePoint' }, totalStudents: { $sum: 1 }, grades: { $push: '$semesterGrade.grade' }, passCount: { $sum: { $cond: [{ $gte: ['$semesterGrade.gradePoint', 1.0] }, 1, 0] } }, failCount: { $sum: { $cond: [{ $lt: ['$semesterGrade.gradePoint', 1.0] }, 1, 0] } } } },
     ]);
-    const gradeMap = new Map(gradeAggRaw.map(g => [g._id.toString(), g]));
+    const gradeMap = new Map(gradeAgg.map(g => [g._id.toString(), g]));
     const courseStats = allCourses.map(c => {
       const g = gradeMap.get(c._id.toString());
-      return { _id: c._id, courseCode: c.courseCode, courseName: c.courseName, major: c.major, year: c.year, semester: c.semester,
-        averageGradePoint: g ? parseFloat(g.averageGradePoint.toFixed(2)) : 0,
-        totalStudents: g ? g.totalStudents : 0, passCount: g ? g.passCount : 0, failCount: g ? g.failCount : 0, grades: g ? g.grades : [],
-      };
+      return { _id: c._id, courseCode: c.courseCode, courseName: c.courseName, major: c.major, year: c.year, semester: c.semester, averageGradePoint: g ? parseFloat(g.averageGradePoint.toFixed(2)) : 0, totalStudents: g?.totalStudents || 0, passCount: g?.passCount || 0, failCount: g?.failCount || 0, grades: g?.grades || [] };
     }).sort((a, b) => (a.courseCode || '').localeCompare(b.courseCode || ''));
-
-    const gradeDist = await Grade.aggregate([
-      { $match: baseMatch },
-      { $group: { _id: '$semesterGrade.grade', count: { $sum: 1 } } },
-      { $sort: { _id: 1 } },
-    ]);
+    const gradeDist = await Grade.aggregate([{ $match: baseMatch }, { $group: { _id: '$semesterGrade.grade', count: { $sum: 1 } } }, { $sort: { _id: 1 } }]);
     const majorStats = await Grade.aggregate([
       { $match: baseMatch },
-      { $lookup: { from: 'users', localField: 'student', foreignField: '_id', as: 'studentInfo' } },
-      { $unwind: '$studentInfo' },
-      { $group: { _id: '$studentInfo.major', averageGradePoint: { $avg: '$semesterGrade.gradePoint' }, totalStudents: { $addToSet: '$student' }, totalGrades: { $sum: 1 } } },
+      { $lookup: { from: 'users', localField: 'student', foreignField: '_id', as: 'si' } },
+      { $unwind: '$si' },
+      { $group: { _id: '$si.major', averageGradePoint: { $avg: '$semesterGrade.gradePoint' }, totalStudents: { $addToSet: '$student' }, totalGrades: { $sum: 1 } } },
       { $project: { major: '$_id', averageGradePoint: { $round: ['$averageGradePoint', 2] }, totalStudents: { $size: '$totalStudents' }, totalGrades: 1 } },
       { $sort: { major: 1 } },
     ]);
@@ -96,18 +68,17 @@ router.get('/statistics/my-courses', auth, isAdmin, async (req, res) => {
   } catch (e) { return sendError(res, 500, 'Error fetching statistics', e); }
 });
 
-// ── Student's own grades ───────────────────────────────────────────────────────
+// ── Student's own grades ──────────────────────────────────────────────────────
 router.get('/student', auth, async (req, res) => {
   try {
     const grades = await Grade.find({ student: req.userId })
-      .populate('course', 'courseCode courseName credits')
-      .sort({ year: -1, semester: 1 })
-      .lean();
+      .populate('course', 'courseCode courseName credits hasPractical')
+      .sort({ year: -1, semester: 1 }).lean();
     res.json(grades);
   } catch (e) { return sendError(res, 500, 'Error fetching grades', e); }
 });
 
-// ── GPA (only finalized semester grades count) ────────────────────────────────
+// ── GPA (finalized only) ──────────────────────────────────────────────────────
 router.get('/gpa', auth, async (req, res) => {
   try {
     const uid = req.userId.toString();
@@ -131,101 +102,149 @@ router.get('/gpa', auth, async (req, res) => {
 router.get('/course/:courseId', auth, async (req, res) => {
   try {
     const grade = await Grade.findOne({ student: req.userId, course: req.params.courseId })
-      .populate('course', 'courseCode courseName');
+      .populate('course', 'courseCode courseName hasPractical');
     if (!grade) return res.status(404).json({ message: 'Grade not found' });
     res.json(grade);
   } catch (e) { return sendError(res, 500, 'Error fetching grade', e); }
 });
 
-// ── Set semester grade (midterm or final) — staff only ────────────────────────
-// POST /grades/semester  { student, course, semester, year, midtermScore?, midtermMaxScore?, finalScore?, finalMaxScore? }
+// ── Save semester grade (final + optional practical) — staff ─────────────────
+// POST /grades/semester
+// Body: { student, course, semester, year, finalScore?, finalMaxScore?, practicalScore?, practicalMaxScore? }
 router.post('/semester', auth, isAdmin, async (req, res) => {
   try {
-    const { student, course, semester, year, midtermScore, midtermMaxScore, finalScore, finalMaxScore } = req.body;
-
-    if (req.user.permissions?.canManageGrades === false)
-      return res.status(403).json({ message: 'No permission to manage grades' });
-    if (!canAccessCourse(req, course))
-      return res.status(403).json({ message: 'You do not have access to this course' });
+    const { student, course, semester, year, finalScore, finalMaxScore, practicalScore, practicalMaxScore, grade: manualGrade, gradePoint: manualGP } = req.body;
+    if (req.user.permissions?.canManageGrades === false) return res.status(403).json({ message: 'No permission to manage grades' });
+    if (!canAccessCourse(req, course)) return res.status(403).json({ message: 'No access to this course' });
     if (!student || !course) return res.status(400).json({ message: 'student and course are required' });
 
     let gradeDoc = await Grade.findOne({ student, course });
-    if (!gradeDoc) {
-      gradeDoc = new Grade({ student, course, semester, year });
-    }
+    if (!gradeDoc) gradeDoc = new Grade({ student, course, semester, year });
 
     const sg = gradeDoc.semesterGrade || {};
 
-    // Update only the fields sent
-    if (midtermScore  != null) sg.midtermScore    = Number(midtermScore);
-    if (midtermMaxScore != null) sg.midtermMaxScore = Number(midtermMaxScore);
-    if (finalScore    != null) {
-      // Final can be graded once; after that, only edits allowed (checked on client,
-      // but we allow it here since the route IS the edit route too)
-      sg.finalScore    = Number(finalScore);
+    if (finalScore        != null) sg.finalScore       = Number(finalScore);
+    if (finalMaxScore     != null) sg.finalMaxScore     = Number(finalMaxScore);
+    if (practicalScore    != null) sg.practicalScore    = Number(practicalScore);
+    if (practicalMaxScore != null) sg.practicalMaxScore = Number(practicalMaxScore);
+
+    // Manual override (superadmin)
+    if (manualGrade && isSuperAdmin(req.user)) {
+      sg.grade = manualGrade; sg.gradePoint = manualGP ?? 0; sg.isFinalized = true;
     }
-    if (finalMaxScore != null) sg.finalMaxScore = Number(finalMaxScore);
 
     gradeDoc.semesterGrade = sg;
     gradeDoc.semester = semester || gradeDoc.semester;
-    gradeDoc.year     = year     ? Number(year) : gradeDoc.year;
-
+    gradeDoc.year     = year ? Number(year) : gradeDoc.year;
     await gradeDoc.save();
 
-    // If finalized, remove from enrolled (course completed for student)
     if (gradeDoc.semesterGrade.isFinalized) {
       await User.findByIdAndUpdate(student, { $pull: { enrolledCourses: course } });
       await Course.findByIdAndUpdate(course, { $pull: { enrolledStudents: student } });
     }
-
     sc.del(`gpa:${student.toString()}`);
     sc.del(`dashboard:student:${student.toString()}`);
-
     res.status(201).json(gradeDoc);
   } catch (e) { return sendError(res, 500, 'Error saving semester grade', e); }
 });
 
-// ── Grade a classwork entry (assignment/quiz/practical) for a student ─────────
+// ── Grade a classwork entry (assignment/quiz/midterm) ─────────────────────────
 // PATCH /grades/classwork/:assignmentId/student/:studentId  { score }
-// assignmentId can be an ObjectId OR the string "practical" for practical exam
+// assignmentId = MongoDB ObjectId of the assignment, OR a special string key for manual entries
 router.patch('/classwork/:assignmentId/student/:studentId', auth, isAdmin, async (req, res) => {
   try {
     const { assignmentId, studentId } = req.params;
     const { score } = req.body;
-
     if (score == null) return res.status(400).json({ message: 'score is required' });
 
-    const isPractical = assignmentId === 'practical';
-
-    // Find the grade doc
-    const gradeDoc = isPractical
-      ? await Grade.findOne({ student: studentId, 'classwork.type': 'practical' })
-      : await Grade.findOne({ student: studentId, 'classwork.assignmentId': assignmentId });
-
+    // Find grade doc — search by assignmentId in classwork array
+    const gradeDoc = await Grade.findOne({ student: studentId, 'classwork.assignmentId': assignmentId });
     if (!gradeDoc) return res.status(404).json({ message: 'Classwork entry not found.' });
+    if (!canAccessCourse(req, gradeDoc.course.toString())) return res.status(403).json({ message: 'No access to this course' });
 
-    if (!canAccessCourse(req, gradeDoc.course.toString()))
-      return res.status(403).json({ message: 'You do not have access to this course' });
-
-    const entry = isPractical
-      ? gradeDoc.classwork.find(e => e.type === 'practical')
-      : gradeDoc.classwork.find(e => e.assignmentId?.toString() === assignmentId);
-
+    const entry = gradeDoc.classwork.find(e => e.assignmentId?.toString() === assignmentId);
     if (!entry) return res.status(404).json({ message: 'Classwork entry not found' });
+    if (Number(score) < 0 || Number(score) > entry.maxScore) return res.status(400).json({ message: `Score must be 0–${entry.maxScore}` });
 
-    if (Number(score) < 0 || Number(score) > entry.maxScore)
-      return res.status(400).json({ message: `Score must be between 0 and ${entry.maxScore}` });
-
-    entry.score    = Number(score);
-    entry.isGraded = true;
-    entry.gradedAt = new Date();
-    entry.gradedBy = req.userId;
-
+    entry.score = Number(score); entry.isGraded = true; entry.gradedAt = new Date(); entry.gradedBy = req.userId;
     gradeDoc.markModified('classwork');
     await gradeDoc.save();
-
     res.json({ message: 'Classwork score saved', entry });
   } catch (e) { return sendError(res, 500, 'Error saving classwork score', e); }
+});
+
+// ── Manually add a classwork entry (offline quiz/midterm) — staff ─────────────
+// POST /grades/classwork/manual
+// Body: { studentId, courseId, name, type, maxScore, score? }
+// Used when a quiz or midterm was NOT created as an online assignment post.
+router.post('/classwork/manual', auth, isAdmin, async (req, res) => {
+  try {
+    const { studentId, courseId, name, type, maxScore, score, semester, year } = req.body;
+    if (!studentId || !courseId || !name) return res.status(400).json({ message: 'studentId, courseId, and name are required' });
+    if (!canAccessCourse(req, courseId)) return res.status(403).json({ message: 'No access to this course' });
+
+    const allowedTypes = ['quiz', 'assignment', 'midterm', 'other'];
+    const entryType = allowedTypes.includes(type) ? type : 'other';
+
+    let gradeDoc = await Grade.findOne({ student: studentId, course: courseId });
+    if (!gradeDoc) {
+      const courseDoc = await Course.findById(courseId).select('semester year').lean();
+      gradeDoc = new Grade({ student: studentId, course: courseId, semester: semester || courseDoc?.semester || 'Spring', year: year ? Number(year) : (courseDoc?.year || new Date().getFullYear()) });
+    }
+
+    const newEntry = {
+      assignmentId: null,
+      name,
+      type: entryType,
+      maxScore: maxScore ? Number(maxScore) : 100,
+      score:    score != null ? Number(score) : null,
+      isGraded: score != null,
+      gradedAt: score != null ? new Date() : null,
+      gradedBy: score != null ? req.userId : null,
+    };
+    gradeDoc.classwork.push(newEntry);
+    gradeDoc.markModified('classwork');
+    await gradeDoc.save();
+    res.status(201).json({ message: 'Manual classwork entry added', entry: newEntry, gradeId: gradeDoc._id });
+  } catch (e) { return sendError(res, 500, 'Error adding manual classwork entry', e); }
+});
+
+// ── Batch grade classwork for entire course ───────────────────────────────────
+// PATCH /grades/classwork/:assignmentId/batch  { scores: [{ studentId, score }] }
+router.patch('/classwork/:assignmentId/batch', auth, isAdmin, async (req, res) => {
+  try {
+    const { assignmentId } = req.params;
+    const { scores } = req.body; // [{ studentId, score }]
+    if (!Array.isArray(scores) || !scores.length) return res.status(400).json({ message: 'scores array required' });
+
+    const results = await Promise.allSettled(scores.map(async ({ studentId, score }) => {
+      const gradeDoc = await Grade.findOne({ student: studentId, 'classwork.assignmentId': assignmentId });
+      if (!gradeDoc) return;
+      if (!canAccessCourse(req, gradeDoc.course.toString())) return;
+      const entry = gradeDoc.classwork.find(e => e.assignmentId?.toString() === assignmentId);
+      if (!entry) return;
+      entry.score = Number(score); entry.isGraded = true; entry.gradedAt = new Date(); entry.gradedBy = req.userId;
+      gradeDoc.markModified('classwork');
+      await gradeDoc.save();
+    }));
+
+    const failed = results.filter(r => r.status === 'rejected').length;
+    res.json({ message: `Batch graded. ${scores.length - failed} saved, ${failed} failed.` });
+  } catch (e) { return sendError(res, 500, 'Error batch grading', e); }
+});
+
+// ── Get grades for a specific student (staff) ─────────────────────────────────
+router.get('/admin/student/:studentId', auth, isAdmin, async (req, res) => {
+  try {
+    const grades = await Grade.find({ student: req.params.studentId })
+      .populate('course', 'courseCode courseName credits hasPractical')
+      .sort({ year: -1, semester: 1 });
+    const filtered = isSuperAdmin(req.user) ? grades : grades.filter(g => canAccessCourse(req, g.course?._id || g.course));
+    const finalized = filtered.filter(g => g.semesterGrade?.isFinalized);
+    const totalWP = finalized.reduce((s, g) => s + ((g.semesterGrade.gradePoint || 0) * (g.course?.credits || 1)), 0);
+    const totalCr = finalized.reduce((s, g) => s + (g.course?.credits || 1), 0);
+    res.json({ grades: filtered, cgpa: totalCr > 0 ? parseFloat((totalWP / totalCr).toFixed(2)) : 0, totalGrades: filtered.length, pendingCount: filtered.filter(g => !g.semesterGrade?.isFinalized).length });
+  } catch (e) { return sendError(res, 500, 'Error fetching student grades', e); }
 });
 
 // ── Delete grade (superadmin only) ────────────────────────────────────────────
@@ -233,59 +252,22 @@ router.delete('/:id', auth, requireSuperAdmin, async (req, res) => {
   try {
     const grade = await Grade.findByIdAndDelete(req.params.id);
     if (!grade) return res.status(404).json({ message: 'Grade not found' });
-    res.json({ message: 'Grade deleted successfully' });
+    res.json({ message: 'Grade deleted' });
   } catch (e) { return sendError(res, 500, 'Error deleting grade', e); }
 });
 
-// ── Get grades for a specific student (staff) ─────────────────────────────────
-router.get('/admin/student/:studentId', auth, isAdmin, async (req, res) => {
-  try {
-    const grades = await Grade.find({ student: req.params.studentId })
-      .populate('course', 'courseCode courseName credits')
-      .sort({ year: -1, semester: 1 });
-
-    const filteredGrades = isSuperAdmin(req.user)
-      ? grades
-      : grades.filter(g => canAccessCourse(req, g.course?._id || g.course));
-
-    const finalizedGrades = filteredGrades.filter(g => g.semesterGrade?.isFinalized);
-    const totalWP  = finalizedGrades.reduce((s, g) => s + ((g.semesterGrade.gradePoint || 0) * (g.course?.credits || 1)), 0);
-    const totalCr  = finalizedGrades.reduce((s, g) => s + (g.course?.credits || 1), 0);
-    const cgpa     = totalCr > 0 ? parseFloat((totalWP / totalCr).toFixed(2)) : 0;
-    const pendingCount = filteredGrades.filter(g => !g.semesterGrade?.isFinalized).length;
-
-    res.json({ grades: filteredGrades, cgpa, totalGrades: filteredGrades.length, pendingCount });
-  } catch (e) { return sendError(res, 500, 'Error fetching student grades', e); }
-});
-
-// ── (Legacy compat) POST /grades — keep working for old manual grade entries ──
+// ── Legacy POST /grades ───────────────────────────────────────────────────────
 router.post('/', auth, isAdmin, async (req, res) => {
   try {
-    const { student, course, semester, year, grade: manualGrade, gradePoint: manualGradePoint, finalScore } = req.body;
-    if (!canAccessCourse(req, course)) return res.status(403).json({ message: 'No access to this course' });
-    if (!student || !course) return res.status(400).json({ message: 'student and course are required' });
-
+    const { student, course, semester, year, grade: manualGrade, gradePoint: manualGP, finalScore } = req.body;
+    if (!canAccessCourse(req, course)) return res.status(403).json({ message: 'No access' });
+    if (!student || !course) return res.status(400).json({ message: 'student and course required' });
     let gradeDoc = await Grade.findOne({ student, course });
     if (!gradeDoc) gradeDoc = new Grade({ student, course, semester, year });
-
     if (finalScore != null) {
-      // Treated as a full semester final grade entry
-      gradeDoc.semesterGrade = {
-        ...gradeDoc.semesterGrade,
-        finalScore: Number(finalScore),
-        finalMaxScore: gradeDoc.semesterGrade?.finalMaxScore || 60,
-      };
+      gradeDoc.semesterGrade = { ...gradeDoc.semesterGrade, finalScore: Number(finalScore), finalMaxScore: gradeDoc.semesterGrade?.finalMaxScore || 100 };
     } else if (manualGrade) {
-      // Pure manual override — set directly on semesterGrade, mark finalized
-      gradeDoc.semesterGrade = {
-        midtermScore: gradeDoc.semesterGrade?.midtermScore ?? null,
-        midtermMaxScore: gradeDoc.semesterGrade?.midtermMaxScore ?? 40,
-        finalScore: gradeDoc.semesterGrade?.finalScore ?? null,
-        finalMaxScore: gradeDoc.semesterGrade?.finalMaxScore ?? 60,
-        grade: manualGrade,
-        gradePoint: manualGradePoint ?? 0,
-        isFinalized: true,
-      };
+      gradeDoc.semesterGrade = { ...gradeDoc.semesterGrade, grade: manualGrade, gradePoint: manualGP ?? 0, isFinalized: true };
     }
     gradeDoc.semester = semester || gradeDoc.semester;
     gradeDoc.year     = year ? Number(year) : gradeDoc.year;
@@ -296,5 +278,4 @@ router.post('/', auth, isAdmin, async (req, res) => {
 });
 
 module.exports = router;
-
 
