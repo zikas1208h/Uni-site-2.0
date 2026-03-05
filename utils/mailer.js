@@ -8,9 +8,9 @@ const createTransporter = () => {
   if (process.env.SMTP_SERVICE === 'gmail') {
     return nodemailer.createTransport({
       host: 'smtp.gmail.com',
-      port: 465,
-      secure: true,
-      family: 4,           // ← force IPv4 — Railway blocks outbound IPv6
+      port: 587,           // Railway blocks 465 — use 587 STARTTLS
+      secure: false,       // false = STARTTLS (upgrades after connect)
+      family: 4,           // force IPv4
       auth: {
         user: process.env.SMTP_USER,
         pass: smtpPass(),
@@ -25,7 +25,7 @@ const createTransporter = () => {
     host: process.env.SMTP_HOST || 'smtp.gmail.com',
     port: parseInt(process.env.SMTP_PORT || '587', 10),
     secure: process.env.SMTP_SECURE === 'true',
-    family: 4,             // ← force IPv4
+    family: 4,
     auth: {
       user: process.env.SMTP_USER,
       pass: smtpPass(),
@@ -97,5 +97,4 @@ const sendOtpEmail = async (toEmail, name, otp) => {
 };
 
 module.exports = { sendOtpEmail };
-
 
