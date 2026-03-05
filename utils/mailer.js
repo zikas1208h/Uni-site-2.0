@@ -9,7 +9,8 @@ const createTransporter = () => {
     return nodemailer.createTransport({
       host: 'smtp.gmail.com',
       port: 465,
-      secure: true,          // SSL on port 465
+      secure: true,
+      family: 4,           // ← force IPv4 — Railway blocks outbound IPv6
       auth: {
         user: process.env.SMTP_USER,
         pass: smtpPass(),
@@ -19,11 +20,12 @@ const createTransporter = () => {
       },
     });
   }
-  // Generic SMTP (Brevo, SendGrid SMTP relay, Mailtrap, etc.)
+  // Generic SMTP
   return nodemailer.createTransport({
     host: process.env.SMTP_HOST || 'smtp.gmail.com',
     port: parseInt(process.env.SMTP_PORT || '587', 10),
     secure: process.env.SMTP_SECURE === 'true',
+    family: 4,             // ← force IPv4
     auth: {
       user: process.env.SMTP_USER,
       pass: smtpPass(),

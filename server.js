@@ -22,6 +22,9 @@ dotenv.config();
 
 const app = express();
 
+// Trust Railway's proxy (fixes X-Forwarded-For for rate-limiting and real IP detection)
+app.set('trust proxy', 1);
+
 // Gzip all responses — dramatically reduces payload size
 app.use(compression());
 
